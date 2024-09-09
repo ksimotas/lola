@@ -4,18 +4,24 @@ description = "Latent Physics Diffusion Model"
 version = "0.0.0"
 dependencies = [
   "einops==0.8.0",
+  "h5py==3.11.0",
   "numpy==1.26.4",
   "torch==2.3.1",
   "torchvision==0.18.1",
+  "tqdm==4.66.5",
 ]
 requires-python = ">=3.11"
 
 [project.optional-dependencies]
 all = [
+  "dawgz==0.5.2",
+  "ipykernel==6.29.5",
+  "matplotlib==3.9.0",
   "neptune==1.11.1",
   "pre-commit==3.8.0",
   "pytest==8.3.2",
   "ruff==0.6.4",
+  "the_well @ git+https://github.com/PolymathicAI/the_well",
 ]
 
 [tool.ruff]
