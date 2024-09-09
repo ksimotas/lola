@@ -18,5 +18,5 @@ pip install --editable .[all] --extra-index-url https://download.pytorch.org/whl
 Optionally, we provide [pre-commit hooks](pre-commit.yml) to automatically detect code issues.
 
 ```
-pre-commit install --config pre-commit.yml
+pre-commit install --config pre-commit.yaml
 ```
