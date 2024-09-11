@@ -5,6 +5,8 @@ __all__ = [
     "LayerNorm",
     "SelfAttentionNd",
     "SpectralConvNd",
+    "ViewAsComplex",
+    "ViewAsReal",
 ]
 
 import math
@@ -198,3 +200,23 @@ class SpectralConvNd(nn.Module):
     @property
     def spatial_dims(self) -> Sequence[int]:
         return tuple(range(-self.spatial, 0))
+
+
+class ViewAsComplex(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+
+        self.dim = dim
+
+    def forward(self, x: Tensor) -> Tensor:
+        return torch.complex(*torch.chunk(x, chunks=2, dim=self.dim))
+
+
+class ViewAsReal(nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+
+        self.dim = dim
+
+    def forward(self, x: Tensor) -> Tensor:
+        return torch.cat((x.real, x.imag), dim=self.dim)

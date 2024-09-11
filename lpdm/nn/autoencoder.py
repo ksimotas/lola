@@ -13,7 +13,19 @@ from torch import Tensor
 from typing import Dict, Optional, Sequence, Union
 
 # isort: split
-from .common import ConvNd, LayerNorm, SelfAttentionNd
+from .common import (
+    ConvNd,
+    LayerNorm,
+    SelfAttentionNd,
+    SpectralConvNd,
+    ViewAsComplex,
+    ViewAsReal,
+)
+
+
+class Residual(nn.Sequential):
+    def forward(self, x: Tensor) -> Tensor:
+        return x + super().forward(x)
 
 
 class ResBlock(nn.Module):
@@ -22,6 +34,7 @@ class ResBlock(nn.Module):
     Arguments:
         channels: The number of channels :math:`C`.
         attention_heads: The number of attention heads.
+        spectral_modes: The number of spectral convolution modes.
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions :math:`N`.
         kwargs: Keyword arguments passed to :class:`torch.nn.Conv2d`.
@@ -31,6 +44,7 @@ class ResBlock(nn.Module):
         self,
         channels: int,
         attention_heads: Optional[int] = None,
+        spectral_modes: Optional[int] = None,
         dropout: Optional[float] = None,
         spatial: int = 2,
         **kwargs,
@@ -50,8 +64,26 @@ class ResBlock(nn.Module):
         )
 
         if attention_heads is not None:
-            self.block.append(LayerNorm(dim=1))
-            self.block.append(SelfAttentionNd(channels, heads=attention_heads))
+            self.block.append(
+                Residual(
+                    LayerNorm(dim=1),
+                    SelfAttentionNd(channels, heads=attention_heads),
+                )
+            )
+
+        if spectral_modes is not None:
+            self.block.append(
+                Residual(
+                    ViewAsComplex(dim=1),
+                    SpectralConvNd(
+                        channels // 2,
+                        channels // 2,
+                        modes=spectral_modes,
+                        spatial=spatial,
+                    ),
+                    ViewAsReal(dim=1),
+                )
+            )
 
     def forward(self, x: Tensor) -> Tensor:
         r"""
@@ -83,6 +115,7 @@ class Encoder(nn.Module):
         kernel_size: The kernel size of all convolutions.
         stride: The stride of the downsampling convolutions.
         attention_heads: The number of attention heads at each depth.
+        spectral_modes: The number of spectral convolution modes at each depth.
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions.
     """
@@ -96,6 +129,7 @@ class Encoder(nn.Module):
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
         attention_heads: Dict[int, int] = {},  # noqa: B006
+        spectral_modes: Dict[int, int] = {},  # noqa: B006
         dropout: Optional[float] = None,
         spatial: int = 2,
     ):
@@ -140,6 +174,7 @@ class Encoder(nn.Module):
                     ResBlock(
                         hid_channels[i],
                         attention_heads=attention_heads.get(i, None),
+                        spectral_modes=spectral_modes.get(i, None),
                         dropout=dropout,
                         spatial=spatial,
                         **kwargs,
@@ -178,6 +213,7 @@ class Decoder(nn.Module):
         kernel_size: The kernel size of all convolutions.
         stride: The stride of the downsampling convolutions.
         attention_heads: The number of attention heads at each depth.
+        spectral_modes: The number of spectral convolution modes at each depth.
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions.
     """
@@ -191,6 +227,7 @@ class Decoder(nn.Module):
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
         attention_heads: Dict[int, int] = {},  # noqa: B006
+        spectral_modes: Dict[int, int] = {},  # noqa: B006
         dropout: Optional[float] = None,
         spatial: int = 2,
     ):
@@ -222,6 +259,7 @@ class Decoder(nn.Module):
                     ResBlock(
                         hid_channels[i],
                         attention_heads=attention_heads.get(i, None),
+                        spectral_modes=spectral_modes.get(i, None),
                         dropout=dropout,
                         spatial=spatial,
                         **kwargs,
