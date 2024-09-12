@@ -4,6 +4,7 @@ __all__ = [
     "ResBlock",
     "Encoder",
     "Decoder",
+    "AutoEncoder",
 ]
 
 import torch
@@ -298,3 +299,56 @@ class Decoder(nn.Module):
                 x = block(x)
 
         return x
+
+
+class AutoEncoder(nn.Module):
+    r"""Creates an auto-encoder module.
+
+    Arguments:
+        pix_channels: The number of pixel channels :math:`C_i`.
+        lat_channels: The number of latent channels :math:`C_o`.
+        hid_channels: The numbers of channels at each depth.
+        hid_blocks: The numbers of hidden blocks at each depth.
+        kwargs: Keyword arguments passed to :class:`Encoder` and :class:`Decoder`.
+    """
+
+    def __init__(
+        self,
+        pix_channels: int,
+        lat_channels: int,
+        hid_channels: Sequence[int] = (256, 128, 64),
+        hid_blocks: Sequence[int] = (3, 3, 3),
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.encoder = Encoder(
+            in_channels=pix_channels,
+            out_channels=lat_channels,
+            hid_channels=hid_channels,
+            hid_blocks=hid_blocks,
+            **kwargs,
+        )
+
+        self.decoder = Decoder(
+            in_channels=lat_channels,
+            out_channels=pix_channels,
+            hid_channels=list(reversed(hid_channels)),
+            hid_blocks=list(reversed(hid_blocks)),
+            **kwargs,
+        )
+
+    def saturate(self, x: Tensor) -> Tensor:
+        return x / (1 + abs(x) / 5)
+
+    def encode(self, x: Tensor) -> Tensor:
+        z = self.encoder(x)
+        z = self.saturate(z)
+        return z
+
+    def decode(self, z: Tensor) -> Tensor:
+        return self.decoder(z)
+
+    def loss(self, x: Tensor) -> Tensor:
+        y = self.decode(self.encode(x))
+        return (x - y).square().mean()
