@@ -1,0 +1,6 @@
+name: "128x128_small"
+lat_channels: 16
+hid_channels: [32, 64, 128]
+hid_blocks: [3, 3, 3]
+attention_heads: {}
+spectral_modes: {}

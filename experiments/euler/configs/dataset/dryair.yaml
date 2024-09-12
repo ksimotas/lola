@@ -1,0 +1,9 @@
+name: "dryair"
+physics: "euler_multi_quadrants_openBC"
+include_filters: ["Dry_air_1000"]
+resolution: [512, 512]
+fields: ["energy", "density", "pressure", "momentum_x", "momentum_y"]
+transform: {0: "log", 1: "log"}
+stats:
+  mean: [0.72, -0.28, 0.56, -0.12, 0.05]
+  std: [0.67, 0.70, 1.57, 0.67, 0.52]
