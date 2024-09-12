@@ -41,15 +41,13 @@ def train(cfg: DictConfig):
 
     # Data
     trainset = get_well_dataset(
-        path=f"/mnt/home/polymathic/ceph/the_well/datasets/{cfg.dataset.physics}",
-        split="train",
+        path=f"/mnt/home/polymathic/ceph/the_well/datasets/{cfg.dataset.physics}/data/train",
         in_steps=1,
         include_filters=cfg.dataset.include_filters,
     )
 
     validset = get_well_dataset(
-        path=f"/mnt/home/polymathic/ceph/the_well/datasets/{cfg.dataset.physics}",
-        split="valid",
+        path=f"/mnt/home/polymathic/ceph/the_well/datasets/{cfg.dataset.physics}/data/valid",
         in_steps=1,
         include_filters=cfg.dataset.include_filters,
     )

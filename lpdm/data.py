@@ -7,12 +7,14 @@ __all__ = [
     "isotropic_power_spectrum",
 ]
 
+import glob
 import math
 import os
+import shutil
 import torch
 
 from torch import Tensor
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 try:
     from the_well.benchmark.data.datasets import GenericWellDataset
@@ -81,37 +83,53 @@ def field_postprocess(
 
 def get_well_dataset(
     path: str,
-    split: Optional[str] = None,
     in_steps: int = 1,
     out_steps: int = 0,
+    include_filters: Sequence[str] = (),
+    exclude_filters: Sequence[str] = (),
+    memory_mapped: bool = False,
+    shm: str = "/dev/shm",
     **kwargs,
 ) -> GenericWellDataset:
     r"""Instantiates a dataset from the Well.
 
     Arguments:
         path: A path to a directory of HDF5 datasets.
-        split: The name of the data split to load. Options are "train", "valid", or "test".
-            If the path does not contain the split directory, an exception is raised.
         in_steps: The number of time steps in the input trajectories.
         out_steps: The number of time steps in the output trajectories.
+        include_filters: Include files whose name contains any of these strings.
+        exclude_filters: Exclude files whose name contains any of these strings
+        memory_mapped: Whether to map files to memory or not.
+        shm: The shared memory filesystem.
         kwargs: Keyword arguments passed to :class:`GenericWellDataset`.
 
     Returns:
         A dataset from the Well.
     """
 
-    if split is not None:
-        if os.path.exists(os.path.join(path, split)):
-            path = os.path.join(path, split)
-        elif os.path.exists(os.path.join(path, "data", split)):
-            path = os.path.join(path, "data", split)
-        else:
-            raise NotADirectoryError(f"{os.path.join(path, split)} does not exist.")
+    path = os.path.abspath(os.path.expanduser(path))
+
+    if memory_mapped:
+        files = glob.glob(os.path.join(path, "*.h5"))
+        files += glob.glob(os.path.join(path, "*.hdf5"))
+
+        if include_filters:
+            files = [file for file in files if any(filtr in file for filtr in include_filters)]
+
+        if exclude_filters:
+            files = [file for file in files if all(filtr not in file for filtr in exclude_filters)]
+
+        for file in files:
+            map_to_memory(file, shm=shm)
+
+        path = os.path.join(shm, os.path.relpath(path, "/"))
 
     return GenericWellDataset(
         path=path,
         n_steps_input=in_steps,
         n_steps_output=out_steps,
+        include_filters=include_filters,
+        exclude_filters=exclude_filters,
         use_normalization=False,
         **kwargs,
     )
@@ -164,3 +182,38 @@ def isotropic_power_spectrum(
     p_iso = p_iso / torch.clip(counts, min=1)
 
     return p_iso, edges
+
+
+def map_to_memory(
+    file: str,
+    shm: str = "/dev/shm",
+    exist_ok: bool = False,
+) -> str:
+    r"""Maps a file to memory.
+
+    Arguments:
+        file: The source file to map.
+        shm: The shared memory filesystem.
+
+    Returns:
+        The file's destination.
+    """
+
+    src = os.path.abspath(os.path.expanduser(file))
+    dst = os.path.join(shm, os.path.relpath(file, "/"))
+
+    if os.path.exists(dst):
+        if exist_ok:
+            return dst
+        else:
+            raise FileExistsError(f"{dst} already exists.")
+    else:
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+
+    size = os.path.getsize(src)
+    free = os.statvfs(shm).f_frsize * os.statvfs(shm).f_bavail
+
+    if size < free:
+        return shutil.copy2(src, dst)
+    else:
+        raise MemoryError(f"not enough space on {shm} (needed: {size} B, free: {free} B).")
