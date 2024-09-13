@@ -32,7 +32,7 @@ def train_ae(
     # Config
     with open_dict(cfg):
         cfg.uuid = uuid.uuid4().hex
-        cfg.name = f"{cfg.dataset.name}_{cfg.ae.name}"
+        cfg.name = f"{cfg.dataset.name}_{cfg.ae.name}_{cfg.optim.name}"
 
     runpath = Path("~/ceph") / "mpp-ldm" / "runs" / f"{cfg.name}_{cfg.uuid}"
     runpath = runpath.expanduser().resolve()
@@ -60,7 +60,7 @@ def train_ae(
     train_loader = DataLoader(
         dataset=trainset,
         shuffle=True,
-        batch_size=cfg.trainer.batch_size,
+        batch_size=cfg.train.batch_size,
         drop_last=True,
         num_workers=8,
         pin_memory=True,
@@ -69,7 +69,7 @@ def train_ae(
     valid_loader = DataLoader(
         dataset=validset,
         shuffle=True,
-        batch_size=cfg.trainer.batch_size,
+        batch_size=cfg.train.batch_size,
         drop_last=True,
         num_workers=8,
         pin_memory=True,
@@ -97,11 +97,11 @@ def train_ae(
     # Optimizer & Scheduler
     optimizer, scheduler = get_optimizer(
         params=model.parameters(),
-        optimizer=cfg.trainer.optimizer,
-        learning_rate=cfg.trainer.learning_rate,
-        weight_decay=cfg.trainer.weight_decay,
-        scheduler=cfg.trainer.scheduler,
-        epochs=cfg.trainer.epochs,
+        optimizer=cfg.optim.optimizer,
+        learning_rate=cfg.optim.learning_rate,
+        weight_decay=cfg.optim.weight_decay,
+        scheduler=cfg.optim.scheduler,
+        epochs=cfg.train.epochs,
     )
 
     # Neptune
@@ -115,13 +115,13 @@ def train_ae(
     run["config/yaml"] = OmegaConf.to_yaml(cfg)
 
     # Training loop
-    for epoch in trange(cfg.trainer.epochs, ncols=88):  # noqa: B007
+    for epoch in trange(cfg.train.epochs, ncols=88):  # noqa: B007
         ## Train
         model.train()
 
         losses, grads = [], []
 
-        for batch in islice(train_loader, cfg.trainer.epoch_size // cfg.trainer.batch_size):
+        for batch in islice(train_loader, cfg.train.epoch_size // cfg.train.batch_size):
             x = batch["input_fields"]
             x = preprocess(x)
             x = rearrange(x, "... B 1 H W C -> ... B C H W")
@@ -130,7 +130,7 @@ def train_ae(
             loss = model.loss(x)
             loss.backward()
 
-            grad_norm = safe_gd_step(optimizer, grad_clip=cfg.trainer.grad_clip)
+            grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
 
             losses.append(loss.detach())
             grads.append(grad_norm)
@@ -148,7 +148,7 @@ def train_ae(
         losses = []
 
         with torch.no_grad():
-            for batch in islice(valid_loader, cfg.trainer.epoch_size // cfg.trainer.batch_size):
+            for batch in islice(valid_loader, cfg.train.epoch_size // cfg.train.batch_size):
                 x = batch["input_fields"]
                 x = preprocess(x)
                 x = rearrange(x, "... B 1 H W C -> ... B C H W")

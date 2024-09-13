@@ -1,14 +1,10 @@
 defaults:
   - _self_
+  - ae: 64x64x4_small
   - dataset: dryair
-  - ae: 64x64_small
+  - optim: adamw_1e-4_0_linear_1e0
 
-trainer:
+train:
   epochs: 256
   epoch_size: 4096
-  batch_size: 16
-  optimizer: "adamw"
-  learning_rate: 1e-4
-  weight_decay: 0.0
-  scheduler: "linear"
-  grad_clip: 1.0
+  batch_size: 8
