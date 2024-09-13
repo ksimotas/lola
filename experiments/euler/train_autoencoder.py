@@ -1,12 +1,18 @@
-r"""Training auto-encoders."""
+#!/usr/bin/env python
 
-from dawgz import Job, schedule
+import argparse
+import os
+
+from dawgz import job, schedule
 from lpdm.hydra import multi_compose
-from omegaconf import DictConfig, OmegaConf, open_dict
-from pathlib import Path
+from omegaconf import DictConfig
 
 
-def train(cfg: DictConfig):
+def train_ae(
+    cfg: DictConfig,
+    datasets: str = "/mnt/ceph/users/polymathic/the_well/datasets",
+    device: str = "cuda",
+):
     import neptune
     import torch
     import uuid
@@ -18,6 +24,8 @@ def train(cfg: DictConfig):
     from lpdm.nn.autoencoder import AutoEncoder
     from lpdm.optim import get_optimizer, safe_gd_step
     from neptune.utils import stringify_unsupported
+    from omegaconf import OmegaConf, open_dict
+    from pathlib import Path
     from torch.utils.data import DataLoader
     from tqdm import trange
 
@@ -36,18 +44,15 @@ def train(cfg: DictConfig):
     with open(runpath / "config.yaml", "w") as f:
         f.write(OmegaConf.to_yaml(cfg))
 
-    # Device
-    device = "cuda"
-
     # Data
     trainset = get_well_dataset(
-        path=f"/mnt/home/polymathic/ceph/the_well/datasets/{cfg.dataset.physics}/data/train",
+        path=os.path.join(datasets, cfg.dataset.physics, "data/train"),
         in_steps=1,
         include_filters=cfg.dataset.include_filters,
     )
 
     validset = get_well_dataset(
-        path=f"/mnt/home/polymathic/ceph/the_well/datasets/{cfg.dataset.physics}/data/valid",
+        path=os.path.join(datasets, cfg.dataset.physics, "data/valid"),
         in_steps=1,
         include_filters=cfg.dataset.include_filters,
     )
@@ -166,32 +171,52 @@ def train(cfg: DictConfig):
 
 
 if __name__ == "__main__":
+    # Parser
+    parser = argparse.ArgumentParser()
+    parser.add_argument("overrides", nargs="*", type=str)
+    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--gpuxl", action="store_true", default=False)
+    parser.add_argument("--slurm", action="store_true", default=False)
+
+    args = parser.parse_args()
+
+    # Config(s)
     configs = multi_compose(
         config_dir="./configs",
-        config_name="default",
-        overrides=[
-            "ae=64x64_small,128x128_small",
-        ],
+        config_name="default.yaml",
+        overrides=args.overrides,
     )
 
-    def main(i: int):
-        train(configs[i])
+    if args.gpuxl:
+        datasets = "/mnt/gpuxl/polymathic/the_well/datasets"
+    else:
+        datasets = "/mnt/ceph/users/polymathic/the_well/datasets"
 
-    job = Job(
-        f=main,
-        name="train",
-        array=len(configs),
-        time="1-00:00:00",
-        cpus=16,
-        gpus=1,
-        ram="64GB",
-        partition="gpu",
-        constraint="h100",
-    )
+    def run(i: int):
+        train_ae(
+            configs[i],
+            datasets=datasets,
+            device=args.device,
+        )
 
-    schedule(
-        job,
-        name="training auto-encoders",
-        backend="slurm",
-        export="ALL",
-    )
+    # Run
+    if args.slurm:
+        schedule(
+            job(
+                f=run,
+                name="train_ae",
+                array=len(configs),
+                cpus=16,
+                gpus=1,
+                ram="64GB",
+                time="1-00:00:00",
+                partition="gpu",
+                constraint="h100",
+            ),
+            backend="slurm",
+        )
+    else:
+        for i in range(len(configs)):
+            if i > 0:
+                print("-" * 88)
+            run(i)
