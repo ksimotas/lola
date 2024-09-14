@@ -128,9 +128,11 @@ def train_ae(
             x = x.to(device, non_blocking=True)
 
             loss = model.loss(x)
-            loss, grad_norm = safe_gd_step(loss, optimizer, grad_clip=cfg.trainer.grad_clip)
+            loss.backward()
 
-            losses.append(loss)
+            grad_norm = safe_gd_step(optimizer, grad_clip=cfg.trainer.grad_clip)
+
+            losses.append(loss.detach())
             grads.append(grad_norm)
 
         losses, grads = torch.stack(losses).cpu(), torch.stack(grads).cpu()

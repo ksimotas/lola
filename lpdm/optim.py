@@ -61,10 +61,9 @@ def get_optimizer(
 
 
 def safe_gd_step(
-    loss: Tensor,
     optimizer: torch.optim.Optimizer,
     grad_clip: Optional[float] = None,
-) -> Tuple[Tensor, Tensor]:
+) -> Tensor:
     r"""Applies a gradient descent (GD) optimization step.
 
     To prevent invalid parameters, steps are skipped if not-a-number (NaN) or infinite
@@ -72,28 +71,27 @@ def safe_gd_step(
     which could be a bottleneck for some applications.
 
     Arguments:
-        loss: The loss value, with shape :math:`()`.
         optimizer: An optimizer.
         grad_clip: The maximum gradient norm. If :py:`None`, gradients are not clipped.
 
     Returns:
-        The detached loss and the unclipped gradient norm.
+        The unclipped gradient norm.
     """
 
-    norm = None
+    params = [p for group in optimizer.param_groups for p in group["params"]]
 
-    if loss.isfinite():
-        loss.backward()
+    if grad_clip is None:
+        norm = torch.linalg.vector_norm(
+            torch.stack([
+                torch.linalg.vector_norm(p.grad) for p in params if torch.is_tensor(p.grad)
+            ])
+        )
+    else:
+        norm = nn.utils.clip_grad_norm_(params, grad_clip)
 
-        if grad_clip is None:
-            optimizer.step()
-            optimizer.zero_grad()
-        else:
-            params = (p for group in optimizer.param_groups for p in group["params"])
-            norm = nn.utils.clip_grad_norm_(params, grad_clip)
+    if norm.isfinite():
+        optimizer.step()
 
-            if norm.isfinite():
-                optimizer.step()
-                optimizer.zero_grad()
+    optimizer.zero_grad()
 
-    return loss.detach(), norm
+    return norm.detach()
