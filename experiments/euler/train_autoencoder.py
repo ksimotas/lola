@@ -90,6 +90,7 @@ def train_ae(
         hid_blocks=cfg.ae.hid_blocks,
         dropout=0.1,
         spatial=2,
+        periodic=cfg.dataset.periodic,
     )
 
     model.to(device)

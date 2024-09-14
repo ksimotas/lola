@@ -101,6 +101,7 @@ class UNet(nn.Module):
         attention_heads: The number of attention heads at each depth.
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions.
+        periodic: Whether the spatial dimensions are periodic or not.
     """
 
     def __init__(
@@ -115,6 +116,7 @@ class UNet(nn.Module):
         attention_heads: Dict[int, int] = {},  # noqa: B006
         dropout: Optional[float] = None,
         spatial: int = 2,
+        periodic: bool = False,
     ):
         super().__init__()
 
@@ -129,6 +131,7 @@ class UNet(nn.Module):
         kwargs = dict(
             kernel_size=tuple(kernel_size),
             padding=tuple(k // 2 for k in kernel_size),
+            padding_mode="circular" if periodic else "zeros",
         )
 
         self.descent, self.ascent = nn.ModuleList(), nn.ModuleList()
