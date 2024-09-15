@@ -7,16 +7,15 @@ __all__ = [
     "AutoEncoder",
 ]
 
-import torch
 import torch.nn as nn
 
 from torch import Tensor
+from torch.utils.checkpoint import checkpoint
 from typing import Dict, Optional, Sequence, Union
 
 # isort: split
 from .common import (
     ConvNd,
-    LayerNorm,
     SelfAttentionNd,
     SpectralConvNd,
     ViewAsComplex,
@@ -34,6 +33,7 @@ class ResBlock(nn.Module):
 
     Arguments:
         channels: The number of channels :math:`C`.
+        groups: The number of groups in :class:`torch.nn.GroupNorm` layers.
         attention_heads: The number of attention heads.
         spectral_modes: The number of spectral convolution modes.
         dropout: The dropout rate in :math:`[0, 1]`.
@@ -44,6 +44,7 @@ class ResBlock(nn.Module):
     def __init__(
         self,
         channels: int,
+        groups: int = 16,
         attention_heads: Optional[int] = None,
         spectral_modes: Optional[int] = None,
         dropout: Optional[float] = None,
@@ -52,12 +53,8 @@ class ResBlock(nn.Module):
     ):
         super().__init__()
 
-        # Ada-zero
-        self.ada_zero = nn.Parameter(1e-2 * torch.randn((3, channels) + (1,) * spatial))
-
-        # Block
         self.block = nn.Sequential(
-            LayerNorm(dim=1),
+            nn.GroupNorm(num_groups=min(groups, channels), num_channels=channels, affine=False),
             ConvNd(channels, channels, spatial=spatial, **kwargs),
             nn.SiLU(),
             nn.Identity() if dropout is None else nn.Dropout(dropout),
@@ -67,7 +64,7 @@ class ResBlock(nn.Module):
         if attention_heads is not None:
             self.block.append(
                 Residual(
-                    LayerNorm(dim=1),
+                    nn.SiLU(),
                     SelfAttentionNd(channels, heads=attention_heads),
                 )
             )
@@ -95,14 +92,7 @@ class ResBlock(nn.Module):
             The output tensor, with shape :math:`(B, C, H_1, ..., H_N)`.
         """
 
-        a, b, c = self.ada_zero
-
-        y = (a + 1) * x + b
-        y = self.block(y)
-        y = x + c * y
-        y = y / torch.sqrt(1 + c * c)
-
-        return y
+        return x + self.block(x)
 
 
 class Encoder(nn.Module):
@@ -120,6 +110,7 @@ class Encoder(nn.Module):
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions.
         periodic: Whether the spatial dimensions are periodic or not.
+        checkpointing: Whether to use gradient checkpointing or not.
     """
 
     def __init__(
@@ -135,6 +126,7 @@ class Encoder(nn.Module):
         dropout: Optional[float] = None,
         spatial: int = 2,
         periodic: bool = False,
+        checkpointing: bool = False,
     ):
         super().__init__()
 
@@ -159,16 +151,13 @@ class Encoder(nn.Module):
 
             if i > 0:
                 blocks.append(
-                    nn.Sequential(
-                        ConvNd(
-                            hid_channels[i - 1],
-                            hid_channels[i],
-                            spatial=spatial,
-                            stride=stride,
-                            **kwargs,
-                        ),
-                        LayerNorm(dim=1),
-                    ),
+                    ConvNd(
+                        hid_channels[i - 1],
+                        hid_channels[i],
+                        spatial=spatial,
+                        stride=stride,
+                        **kwargs,
+                    )
                 )
             else:
                 blocks.append(ConvNd(in_channels, hid_channels[i], spatial=spatial, **kwargs))
@@ -190,6 +179,8 @@ class Encoder(nn.Module):
 
             self.descent.append(blocks)
 
+        self.checkpointing = checkpointing
+
     def forward(self, x: Tensor) -> Tensor:
         r"""
         Arguments:
@@ -201,7 +192,10 @@ class Encoder(nn.Module):
 
         for blocks in self.descent:
             for block in blocks:
-                x = block(x)
+                if self.checkpointing and isinstance(block, ResBlock):
+                    x = checkpoint(block, x, use_reentrant=False)
+                else:
+                    x = block(x)
 
         return x
 
@@ -221,6 +215,7 @@ class Decoder(nn.Module):
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions.
         periodic: Whether the spatial dimensions are periodic or not.
+        checkpointing: Whether to use gradient checkpointing or not.
     """
 
     def __init__(
@@ -236,6 +231,7 @@ class Decoder(nn.Module):
         dropout: Optional[float] = None,
         spatial: int = 2,
         periodic: bool = False,
+        checkpointing: bool = False,
     ):
         super().__init__()
 
@@ -276,7 +272,6 @@ class Decoder(nn.Module):
             if i + 1 < len(hid_blocks):
                 blocks.append(
                     nn.Sequential(
-                        LayerNorm(dim=1),
                         nn.Upsample(scale_factor=tuple(stride), mode="nearest"),
                         ConvNd(
                             hid_channels[i],
@@ -291,6 +286,8 @@ class Decoder(nn.Module):
 
             self.ascent.append(blocks)
 
+        self.checkpointing = checkpointing
+
     def forward(self, x: Tensor) -> Tensor:
         r"""
         Arguments:
@@ -302,7 +299,10 @@ class Decoder(nn.Module):
 
         for blocks in self.ascent:
             for block in blocks:
-                x = block(x)
+                if self.checkpointing and isinstance(block, ResBlock):
+                    x = checkpoint(block, x, use_reentrant=False)
+                else:
+                    x = block(x)
 
         return x
 

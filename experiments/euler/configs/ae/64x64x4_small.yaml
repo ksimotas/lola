@@ -1,6 +1,6 @@
 name: "64x64x4_small"
 lat_channels: 4
 hid_channels: [32, 64, 128, 256]
-hid_blocks: [3, 3, 3, 3]
+hid_blocks: [2, 2, 2, 2]
 attention_heads: {}
 spectral_modes: {}

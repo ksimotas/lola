@@ -1,6 +1,6 @@
 name: "64x64x4_large_attention"
 lat_channels: 4
 hid_channels: [64, 128, 256, 384]
-hid_blocks: [5, 5, 5, 5]
+hid_blocks: [2, 2, 2, 2]
 attention_heads: {3: 4}
 spectral_modes: {}
