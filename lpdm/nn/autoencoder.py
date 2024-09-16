@@ -322,7 +322,7 @@ class AutoEncoder(nn.Module):
         self,
         pix_channels: int,
         lat_channels: int,
-        hid_channels: Sequence[int] = (256, 128, 64),
+        hid_channels: Sequence[int] = (64, 128, 256),
         hid_blocks: Sequence[int] = (3, 3, 3),
         **kwargs,
     ):

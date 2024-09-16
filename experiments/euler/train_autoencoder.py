@@ -88,9 +88,10 @@ def train_ae(
         lat_channels=cfg.ae.lat_channels,
         hid_channels=cfg.ae.hid_channels,
         hid_blocks=cfg.ae.hid_blocks,
-        dropout=0.1,
+        dropout=0.01,
         spatial=2,
         periodic=cfg.dataset.periodic,
+        checkpointing=True,
     )
 
     model.to(device)

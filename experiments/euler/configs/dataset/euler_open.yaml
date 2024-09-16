@@ -1,6 +1,6 @@
-name: "dryair"
+name: "euler_open"
 physics: "euler_multi_quadrants_openBC"
-include_filters: ["Dry_air_1000"]
+include_filters: []
 resolution: [512, 512]
 periodic: false
 fields: ["energy", "density", "pressure", "momentum_x", "momentum_y"]

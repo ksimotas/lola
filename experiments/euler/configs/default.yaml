@@ -1,10 +1,10 @@
 defaults:
   - _self_
-  - ae: 64x64x4_small
-  - dataset: dryair
+  - ae: 64x64x4_medium
+  - dataset: euler_open
   - optim: adamw_1e-4_0_linear_1e0
 
 train:
   epochs: 256
   epoch_size: 4096
-  batch_size: 8
+  batch_size: 16
