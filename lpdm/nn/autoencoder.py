@@ -7,11 +7,12 @@ __all__ = [
     "AutoEncoder",
 ]
 
+import torch
 import torch.nn as nn
 
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
-from typing import Dict, Optional, Sequence, Union
+from typing import Dict, Optional, Sequence, Tuple, Union
 
 # isort: split
 from .common import (
@@ -355,6 +356,18 @@ class AutoEncoder(nn.Module):
     def decode(self, z: Tensor) -> Tensor:
         return self.decoder(z)
 
-    def loss(self, x: Tensor) -> Tensor:
+    def loss(
+        self,
+        x: Tensor,
+        mask_rate: Optional[float] = None,
+    ) -> Tuple[Tensor, Tensor]:
         y = self.decode(self.encode(x))
-        return (x - y).square().mean()
+
+        if mask_rate is None:
+            error = y - x
+        else:
+            error = torch.nn.functional.dropout(y - x, p=mask_rate)
+
+        mse = error.square().mean()
+
+        return mse, y

@@ -166,7 +166,7 @@ def isotropic_power_spectrum(
 
     if edges is None:
         bins = math.ceil(math.sqrt(max(w_iso.shape)))
-        edges = torch.linspace(0, w_iso.max(), bins + 1)
+        edges = torch.linspace(0, w_iso.max(), bins + 1, dtype=x.dtype, device=x.device)
     else:
         bins = len(edges) - 1
 

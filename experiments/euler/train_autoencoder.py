@@ -20,7 +20,7 @@ def train_ae(
     from einops import rearrange
     from functools import partial
     from itertools import islice
-    from lpdm.data import field_preprocess, get_well_dataset
+    from lpdm.data import field_preprocess, get_well_dataset, isotropic_power_spectrum
     from lpdm.nn.autoencoder import AutoEncoder
     from lpdm.optim import get_optimizer, safe_gd_step
     from neptune.utils import stringify_unsupported
@@ -129,7 +129,7 @@ def train_ae(
             x = rearrange(x, "... B 1 H W C -> ... B C H W")
             x = x.to(device, non_blocking=True)
 
-            loss = model.loss(x)
+            loss, y = model.loss(x)
             loss.backward()
 
             grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
@@ -148,6 +148,7 @@ def train_ae(
         model.eval()
 
         losses = []
+        ps_msres = []
 
         with torch.no_grad():
             for batch in islice(valid_loader, cfg.train.epoch_size // cfg.train.batch_size):
@@ -156,13 +157,23 @@ def train_ae(
                 x = rearrange(x, "... B 1 H W C -> ... B C H W")
                 x = x.to(device, non_blocking=True)
 
-                loss = model.loss(x).detach()
+                loss, y = model.loss(x)
+
+                x_ps, _ = isotropic_power_spectrum(x)
+                y_ps, _ = isotropic_power_spectrum(y)
+
+                ps_msre = (1 - y_ps / (x_ps + 1e-3)).square().mean()
+
                 losses.append(loss)
+                ps_msres.append(ps_msre)
 
         losses = torch.stack(losses).cpu()
+        ps_msres = torch.stack(ps_msres).cpu()
 
         run["valid/loss/mean"].append(losses.mean())
         run["valid/loss/std"].append(losses.std())
+        run["valid/ps_msre/mean"].append(ps_msres.mean())
+        run["valid/ps_msre/std"].append(ps_msres.std())
 
         ## LR scheduler
         scheduler.step()
