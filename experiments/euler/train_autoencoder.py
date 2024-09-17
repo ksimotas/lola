@@ -120,7 +120,7 @@ def train(
         dropout=0.01,
         spatial=2,
         periodic=cfg.dataset.periodic,
-        checkpointing=True,
+        checkpointing=False,
     ).to(device)
 
     model = DistributedDataParallel(
