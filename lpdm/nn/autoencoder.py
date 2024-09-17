@@ -7,6 +7,7 @@ __all__ = [
     "AutoEncoder",
 ]
 
+import math
 import torch
 import torch.nn as nn
 
@@ -84,6 +85,8 @@ class ResBlock(nn.Module):
                 )
             )
 
+        self.register_buffer("output_scale", torch.as_tensor(1 / math.sqrt(2)))
+
     def forward(self, x: Tensor) -> Tensor:
         r"""
         Arguments:
@@ -93,7 +96,7 @@ class ResBlock(nn.Module):
             The output tensor, with shape :math:`(B, C, H_1, ..., H_N)`.
         """
 
-        return x + self.block(x)
+        return self.output_scale * (x + self.block(x))
 
 
 class Encoder(nn.Module):
@@ -223,7 +226,7 @@ class Decoder(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        hid_channels: Sequence[int] = (256, 128, 64),
+        hid_channels: Sequence[int] = (64, 128, 256),
         hid_blocks: Sequence[int] = (3, 3, 3),
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
@@ -252,10 +255,10 @@ class Decoder(nn.Module):
 
         self.ascent = nn.ModuleList()
 
-        for i, num_blocks in enumerate(hid_blocks):
+        for i, num_blocks in reversed(list(enumerate(hid_blocks))):
             blocks = nn.ModuleList()
 
-            if i == 0:
+            if i + 1 == len(hid_blocks):
                 blocks.append(ConvNd(in_channels, hid_channels[i], spatial=spatial, **kwargs))
 
             for _ in range(num_blocks):
@@ -270,13 +273,13 @@ class Decoder(nn.Module):
                     )
                 )
 
-            if i + 1 < len(hid_blocks):
+            if i > 0:
                 blocks.append(
                     nn.Sequential(
                         nn.Upsample(scale_factor=tuple(stride), mode="nearest"),
                         ConvNd(
                             hid_channels[i],
-                            hid_channels[i + 1],
+                            hid_channels[i - 1],
                             spatial=spatial,
                             **kwargs,
                         ),
@@ -340,8 +343,8 @@ class AutoEncoder(nn.Module):
         self.decoder = Decoder(
             in_channels=lat_channels,
             out_channels=pix_channels,
-            hid_channels=list(reversed(hid_channels)),
-            hid_blocks=list(reversed(hid_blocks)),
+            hid_channels=hid_channels,
+            hid_blocks=hid_blocks,
             **kwargs,
         )
 
