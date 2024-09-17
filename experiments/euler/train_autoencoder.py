@@ -8,14 +8,13 @@ from lpdm.hydra import multi_compose
 from omegaconf import DictConfig
 
 
-def train_ae(
+def train(
     cfg: DictConfig,
     datasets: str = "/mnt/ceph/users/polymathic/the_well/datasets",
-    device: str = "cuda",
 ):
-    import neptune
     import torch
-    import uuid
+    import torch.distributed as dist
+    import wandb
 
     from einops import rearrange
     from functools import partial
@@ -23,26 +22,36 @@ def train_ae(
     from lpdm.data import field_preprocess, get_well_dataset, isotropic_power_spectrum
     from lpdm.nn.autoencoder import AutoEncoder
     from lpdm.optim import get_optimizer, safe_gd_step
-    from neptune.utils import stringify_unsupported
     from omegaconf import OmegaConf, open_dict
     from pathlib import Path
-    from torch.utils.data import DataLoader
+    from torch.nn.parallel import DistributedDataParallel
+    from torch.utils.data import DataLoader, DistributedSampler
     from tqdm import trange
 
-    # Config
-    with open_dict(cfg):
-        cfg.uuid = uuid.uuid4().hex
-        cfg.name = f"{cfg.dataset.name}_{cfg.ae.name}_{cfg.optim.name}"
+    # DDP
+    dist.init_process_group(backend="nccl")
 
-    runpath = Path("~/ceph") / "mpp-ldm" / "runs" / f"{cfg.name}_{cfg.uuid}"
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+
+    device_id = os.environ.get("LOCAL_RANK", rank)
+    device = torch.device(f"cuda:{device_id}")
+    torch.cuda.set_device(device)
+
+    # Config
+    runid = wandb.util.generate_id()
+    runname = f"{cfg.dataset.name}_{cfg.ae.name}_{cfg.optim.name}"
+
+    runpath = Path(f"~/ceph/mpp-ldm/runs/{runname}_{runid}")
     runpath = runpath.expanduser().resolve()
     runpath.mkdir(parents=True, exist_ok=True)
 
     with open_dict(cfg):
         cfg.path = str(runpath)
 
-    with open(runpath / "config.yaml", "w") as f:
-        f.write(OmegaConf.to_yaml(cfg))
+    if rank == 0:
+        with open(runpath / "config.yaml", "w") as f:
+            f.write(OmegaConf.to_yaml(cfg))
 
     # Data
     trainset = get_well_dataset(
@@ -51,27 +60,47 @@ def train_ae(
         include_filters=cfg.dataset.include_filters,
     )
 
+    train_sampler = DistributedSampler(
+        dataset=trainset,
+        rank=rank,
+        drop_last=True,
+        shuffle=True,
+        seed=42,
+    )
+
+    train_loader = DataLoader(
+        dataset=trainset,
+        sampler=train_sampler,
+        batch_size=cfg.train.batch_size,
+        drop_last=True,
+        shuffle=False,
+        num_workers=32 // world_size,
+        persistent_workers=True,
+        pin_memory=True,
+    )
+
     validset = get_well_dataset(
         path=os.path.join(datasets, cfg.dataset.physics, "data/valid"),
         in_steps=1,
         include_filters=cfg.dataset.include_filters,
     )
 
-    train_loader = DataLoader(
-        dataset=trainset,
-        shuffle=True,
-        batch_size=cfg.train.batch_size,
+    valid_sampler = DistributedSampler(
+        dataset=validset,
+        rank=rank,
         drop_last=True,
-        num_workers=8,
-        pin_memory=True,
+        shuffle=True,
+        seed=42,
     )
 
     valid_loader = DataLoader(
         dataset=validset,
-        shuffle=True,
+        sampler=valid_sampler,
         batch_size=cfg.train.batch_size,
         drop_last=True,
-        num_workers=8,
+        shuffle=False,
+        num_workers=32 // world_size,
+        persistent_workers=True,
         pin_memory=True,
     )
 
@@ -82,7 +111,7 @@ def train_ae(
         transform=cfg.dataset.transform,
     )
 
-    # Model
+    # Model, optimizer & scheduler
     model = AutoEncoder(
         pix_channels=len(cfg.dataset.fields),
         lat_channels=cfg.ae.lat_channels,
@@ -92,11 +121,13 @@ def train_ae(
         spatial=2,
         periodic=cfg.dataset.periodic,
         checkpointing=True,
+    ).to(device)
+
+    model = DistributedDataParallel(
+        module=model,
+        device_ids=[device],
     )
 
-    model.to(device)
-
-    # Optimizer & Scheduler
     optimizer, scheduler = get_optimizer(
         params=model.parameters(),
         optimizer=cfg.optim.optimizer,
@@ -106,30 +137,39 @@ def train_ae(
         epochs=cfg.train.epochs,
     )
 
-    # Neptune
-    run = neptune.init_run(
-        project="mppx/mpp-ldm",
-        name=cfg.name,
-        source_files=["train.py"],
-    )
-
-    run["config"] = stringify_unsupported(OmegaConf.to_container(cfg))
-    run["config/yaml"] = OmegaConf.to_yaml(cfg)
+    # W&B
+    if rank == 0:
+        run = wandb.init(
+            project="mpp-ldm",
+            id=runid,
+            name=runname,
+            config=OmegaConf.to_container(cfg),
+        )
 
     # Training loop
-    for epoch in trange(cfg.train.epochs, ncols=88):  # noqa: B007
+    steps = cfg.train.epoch_size // cfg.train.batch_size // world_size
+
+    if rank == 0:
+        epochs = trange(cfg.train.epochs, ncols=88, miniters=1)
+    else:
+        epochs = range(cfg.train.epochs)
+
+    for epoch in epochs:
+        train_sampler.set_epoch(epoch)
+        valid_sampler.set_epoch(epoch)
+
         ## Train
         model.train()
 
         losses, grads = [], []
 
-        for batch in islice(train_loader, cfg.train.epoch_size // cfg.train.batch_size):
+        for batch in islice(train_loader, steps):
             x = batch["input_fields"]
             x = preprocess(x)
             x = rearrange(x, "... B 1 H W C -> ... B C H W")
             x = x.to(device, non_blocking=True)
 
-            loss, y = model.loss(x)
+            loss, y = model(x)
             loss.backward()
 
             grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
@@ -137,27 +177,44 @@ def train_ae(
             losses.append(loss.detach())
             grads.append(grad_norm)
 
-        losses, grads = torch.stack(losses).cpu(), torch.stack(grads).cpu()
+        losses = torch.stack(losses)
+        grads = torch.stack(grads)
 
-        run["train/loss/mean"].append(losses.mean())
-        run["train/loss/std"].append(losses.std())
-        run["train/grad_norm/mean"].append(grads.mean())
-        run["train/grad_norm/std"].append(grads.std())
+        if rank == 0:
+            losses_list = [torch.empty_like(losses) for _ in range(world_size)]
+            grads_list = [torch.empty_like(grads) for _ in range(world_size)]
+        else:
+            losses_list = None
+            grads_list = None
+
+        dist.gather(losses, losses_list, dst=0)
+        dist.gather(grads, grads_list, dst=0)
+
+        if rank == 0:
+            losses = torch.cat(losses_list).cpu()
+            grads = torch.cat(grads_list).cpu()
+
+            logs = {}
+            logs["train/loss/mean"] = losses.mean()
+            logs["train/loss/std"] = losses.std()
+            logs["train/grad_norm/mean"] = grads.mean()
+            logs["train/grad_norm/std"] = grads.std()
+
+        del losses, losses_list, grads, grads_list
 
         ## Eval
         model.eval()
 
-        losses = []
-        ps_msres = []
+        losses, ps_msres = [], []
 
         with torch.no_grad():
-            for batch in islice(valid_loader, cfg.train.epoch_size // cfg.train.batch_size):
+            for batch in islice(valid_loader, steps):
                 x = batch["input_fields"]
                 x = preprocess(x)
                 x = rearrange(x, "... B 1 H W C -> ... B C H W")
                 x = x.to(device, non_blocking=True)
 
-                loss, y = model.loss(x)
+                loss, y = model(x)
 
                 x_ps, _ = isotropic_power_spectrum(x)
                 y_ps, _ = isotropic_power_spectrum(y)
@@ -167,29 +224,53 @@ def train_ae(
                 losses.append(loss)
                 ps_msres.append(ps_msre)
 
-        losses = torch.stack(losses).cpu()
-        ps_msres = torch.stack(ps_msres).cpu()
+        losses = torch.stack(losses)
+        ps_msres = torch.stack(ps_msres)
 
-        run["valid/loss/mean"].append(losses.mean())
-        run["valid/loss/std"].append(losses.std())
-        run["valid/ps_msre/mean"].append(ps_msres.mean())
-        run["valid/ps_msre/std"].append(ps_msres.std())
+        if rank == 0:
+            losses_list = [torch.empty_like(losses) for _ in range(world_size)]
+            ps_msres_list = [torch.empty_like(ps_msres) for _ in range(world_size)]
+        else:
+            losses_list = None
+            ps_msres_list = None
+
+        dist.gather(losses, losses_list, dst=0)
+        dist.gather(ps_msres, ps_msres_list, dst=0)
+
+        if rank == 0:
+            losses = torch.stack(losses_list).cpu()
+            ps_msres = torch.stack(ps_msres_list).cpu()
+
+            logs["valid/loss/mean"] = losses.mean()
+            logs["valid/loss/std"] = losses.std()
+            logs["valid/ps_msre/mean"] = ps_msres.mean()
+            logs["valid/ps_msre/std"] = ps_msres.std()
+
+            run.log(logs)
+
+        del losses, losses_list, ps_msres, ps_msres_list
 
         ## LR scheduler
         scheduler.step()
 
         ## Checkpoint
-        state = model.state_dict()
-        torch.save(state, runpath / "state.pth")
+        if rank == 0:
+            state = model.module.state_dict()
+            torch.save(state, runpath / "state.pth")
 
-    run.stop()
+        dist.barrier()
+
+    # W&B
+    run.finish()
+
+    # DDP
+    dist.destroy_process_group()
 
 
 if __name__ == "__main__":
     # Parser
     parser = argparse.ArgumentParser()
     parser.add_argument("overrides", nargs="*", type=str)
-    parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--gpuxl", action="store_true", default=False)
     parser.add_argument("--slurm", action="store_true", default=False)
 
@@ -207,31 +288,33 @@ if __name__ == "__main__":
     else:
         datasets = "/mnt/ceph/users/polymathic/the_well/datasets"
 
-    def run(i: int):
-        train_ae(
-            configs[i],
-            datasets=datasets,
-            device=args.device,
-        )
+    def launch(i: int):
+        train(configs[i], datasets=datasets)
 
     # Run
     if args.slurm:
         schedule(
             job(
-                f=run,
-                name="train_ae",
+                f=launch,
+                name="train",
                 array=len(configs),
-                cpus=16,
-                gpus=1,
+                cpus=32,
+                gpus=4,
                 ram="64GB",
-                time="1-00:00:00",
-                partition="gpu",
+                time="2-00:00:00",
+                partition="gpuxl" if args.gpuxl else "gpu",
                 constraint="h100",
             ),
+            name="training auto-encoders",
             backend="slurm",
+            interpreter="torchrun --nnodes 1 --nproc-per-node 4 --standalone",
+            env=[
+                "export WANDB_SILENT=true",
+                "export XDG_CACHE_HOME=$HOME/.cache",
+            ],
         )
     else:
         for i in range(len(configs)):
             if i > 0:
                 print("-" * 88)
-            run(i)
+            launch(i)

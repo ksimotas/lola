@@ -356,7 +356,7 @@ class AutoEncoder(nn.Module):
     def decode(self, z: Tensor) -> Tensor:
         return self.decoder(z)
 
-    def loss(
+    def forward(
         self,
         x: Tensor,
         mask_rate: Optional[float] = None,
