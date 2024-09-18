@@ -19,7 +19,7 @@ def train(
     from einops import rearrange
     from functools import partial
     from itertools import islice
-    from lpdm.data import field_preprocess, get_well_dataset, isotropic_power_spectrum
+    from lpdm.data import field_preprocess, get_well_dataset
     from lpdm.nn.autoencoder import AutoEncoder
     from lpdm.optim import get_optimizer, safe_gd_step
     from omegaconf import OmegaConf, open_dict
@@ -206,7 +206,7 @@ def train(
         ## Eval
         model.eval()
 
-        losses, ps_msres = [], []
+        losses = []
 
         with torch.no_grad():
             for batch in islice(valid_loader, steps):
@@ -217,40 +217,26 @@ def train(
                 x = x.to(device, non_blocking=True)
 
                 loss, y = model(x)
-
-                x_ps, _ = isotropic_power_spectrum(x)
-                y_ps, _ = isotropic_power_spectrum(y)
-
-                ps_msre = (1 - y_ps / (x_ps + 1e-3)).square().mean()
-
                 losses.append(loss)
-                ps_msres.append(ps_msre)
 
         losses = torch.stack(losses)
-        ps_msres = torch.stack(ps_msres)
 
         if rank == 0:
             losses_list = [torch.empty_like(losses) for _ in range(world_size)]
-            ps_msres_list = [torch.empty_like(ps_msres) for _ in range(world_size)]
         else:
             losses_list = None
-            ps_msres_list = None
 
         dist.gather(losses, losses_list, dst=0)
-        dist.gather(ps_msres, ps_msres_list, dst=0)
 
         if rank == 0:
             losses = torch.stack(losses_list).cpu()
-            ps_msres = torch.stack(ps_msres_list).cpu()
 
             logs["valid/loss/mean"] = losses.mean()
             logs["valid/loss/std"] = losses.std()
-            logs["valid/ps_msre/mean"] = ps_msres.mean()
-            logs["valid/ps_msre/std"] = ps_msres.std()
 
             run.log(logs)
 
-        del losses, losses_list, ps_msres, ps_msres_list
+        del losses, losses_list
 
         ## LR scheduler
         scheduler.step()
