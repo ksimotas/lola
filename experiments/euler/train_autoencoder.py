@@ -166,7 +166,8 @@ def train(
         for batch in islice(train_loader, steps):
             x = batch["input_fields"]
             x = preprocess(x)
-            x = rearrange(x, "... B 1 H W C -> ... B C H W")
+            x[..., 2] = x[..., 2].clip(min=-1e1, max=1e1)  # temporary fix for pressure
+            x = rearrange(x, "B 1 H W C -> B C H W")
             x = x.to(device, non_blocking=True)
 
             loss, y = model(x)
@@ -211,7 +212,8 @@ def train(
             for batch in islice(valid_loader, steps):
                 x = batch["input_fields"]
                 x = preprocess(x)
-                x = rearrange(x, "... B 1 H W C -> ... B C H W")
+                x[..., 2] = x[..., 2].clip(min=-1e1, max=1e1)  # temporary fix for pressure
+                x = rearrange(x, "B 1 H W C -> B C H W")
                 x = x.to(device, non_blocking=True)
 
                 loss, y = model(x)
