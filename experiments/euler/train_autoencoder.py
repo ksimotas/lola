@@ -117,6 +117,8 @@ def train(
         lat_channels=cfg.ae.lat_channels,
         hid_channels=cfg.ae.hid_channels,
         hid_blocks=cfg.ae.hid_blocks,
+        attention_heads=cfg.ae.attention_heads,
+        spectral_modes=cfg.ae.spectral_modes,
         dropout=0.01,
         spatial=2,
         periodic=cfg.dataset.periodic,
