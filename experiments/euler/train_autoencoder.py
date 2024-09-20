@@ -20,7 +20,7 @@ def train(
     from functools import partial
     from itertools import islice
     from lpdm.data import field_preprocess, get_well_dataset
-    from lpdm.nn.autoencoder import AutoEncoder
+    from lpdm.nn.autoencoder import AutoEncoder, AutoEncoderLoss
     from lpdm.optim import get_optimizer, safe_gd_step
     from omegaconf import OmegaConf, open_dict
     from pathlib import Path
@@ -123,10 +123,16 @@ def train(
         spatial=2,
         periodic=cfg.dataset.periodic,
         checkpointing=False,
-    ).to(device)
+    )
+
+    model = AutoEncoderLoss(
+        model=model,
+        losses=cfg.ae.loss.losses,
+        weights=cfg.ae.loss.weights,
+    )
 
     model = DistributedDataParallel(
-        module=model,
+        module=model.to(device),
         device_ids=[device],
     )
 
@@ -243,7 +249,7 @@ def train(
 
         ## Checkpoint
         if rank == 0:
-            state = model.module.state_dict()
+            state = model.module.model.state_dict()
             torch.save(state, runpath / "state.pth")
 
         dist.barrier()

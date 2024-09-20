@@ -5,6 +5,7 @@ __all__ = [
     "Encoder",
     "Decoder",
     "AutoEncoder",
+    "AutoEncoderLoss",
 ]
 
 import math
@@ -359,18 +360,44 @@ class AutoEncoder(nn.Module):
     def decode(self, z: Tensor) -> Tensor:
         return self.decoder(z)
 
-    def forward(
+    def forward(self, x: Tensor) -> Tensor:
+        return self.decode(self.encode(x))
+
+
+class AutoEncoderLoss(nn.Module):
+    r"""Creates a loss module for a deterministic auto-encoder."""
+
+    def __init__(
         self,
-        x: Tensor,
-        mask_rate: Optional[float] = None,
-    ) -> Tuple[Tensor, Tensor]:
-        y = self.decode(self.encode(x))
+        model: AutoEncoder,
+        losses: Sequence[str] = ["mse"],  # noqa: B006
+        weights: Sequence[float] = [1.0],  # noqa: B006
+    ):
+        super().__init__()
 
-        if mask_rate is None:
-            error = y - x
-        else:
-            error = torch.nn.functional.dropout(y - x, p=mask_rate)
+        self.model = model
 
-        mse = error.square().mean()
+        assert len(losses) == len(weights)
 
-        return mse, y
+        LOSSES = {
+            "mae": mae,
+            "mse": mse,
+        }
+
+        self.losses = [LOSSES[key] for key in losses]
+        self.register_buffer("weights", torch.as_tensor(weights))
+
+    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor]:
+        y = self.model(x)
+
+        values = torch.stack([loss(x, y) for loss in self.losses])
+
+        return torch.vdot(self.weights, values), y
+
+
+def mae(x: Tensor, y: Tensor) -> Tensor:
+    return (x - y).abs().mean()
+
+
+def mse(x: Tensor, y: Tensor) -> Tensor:
+    return (x - y).square().mean()
