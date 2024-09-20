@@ -266,8 +266,7 @@ if __name__ == "__main__":
 
     # Config(s)
     configs = multi_compose(
-        config_dir="./configs",
-        config_name="default.yaml",
+        config_file="./configs/default.yaml",
         overrides=args.overrides,
     )
 
