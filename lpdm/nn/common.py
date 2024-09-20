@@ -15,6 +15,7 @@ import torch.nn as nn
 
 from einops import rearrange
 from torch import Tensor
+from torch.utils.checkpoint import checkpoint
 from typing import Sequence, Union
 
 
@@ -89,10 +90,18 @@ class SelfAttentionNd(nn.MultiheadAttention):
         kwargs: Keyword arguments passed to :class:`torch.nn.MultiheadAttention`.
     """
 
-    def __init__(self, channels: int, heads: int = 1, **kwargs):
+    def __init__(
+        self,
+        channels: int,
+        heads: int = 1,
+        checkpointing: bool = True,
+        **kwargs,
+    ):
         super().__init__(embed_dim=channels, num_heads=heads, batch_first=True, **kwargs)
 
-    def forward(self, x: Tensor) -> Tensor:
+        self.checkpointing = checkpointing
+
+    def _forward(self, x: Tensor) -> Tensor:
         r"""
         Arguments:
             x: The input tensor :math:`x`, with shape :math:`(B, C, H_1, ..., H_N)`.
@@ -106,6 +115,12 @@ class SelfAttentionNd(nn.MultiheadAttention):
         y = rearrange(y, "B L C -> B C L").reshape(x.shape)
 
         return y
+
+    def forward(self, x: Tensor) -> Tensor:
+        if self.checkpointing:
+            return checkpoint(self._forward, x, use_reentrant=False)
+        else:
+            return self._forward(x)
 
 
 class SpectralConvNd(nn.Module):

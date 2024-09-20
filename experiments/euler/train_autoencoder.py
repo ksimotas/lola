@@ -122,7 +122,6 @@ def train(
         dropout=0.01,
         spatial=2,
         periodic=cfg.dataset.periodic,
-        checkpointing=False,
     )
 
     model = AutoEncoderLoss(
