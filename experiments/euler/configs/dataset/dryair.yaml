@@ -4,7 +4,7 @@ include_filters: ["Dry_air_1000"]
 resolution: [512, 512]
 periodic: false
 fields: ["energy", "density", "pressure", "momentum_x", "momentum_y"]
-transform: {0: "log", 1: "log"}
+transform: {0: "log", 1: "log", 2: "log"}
 stats:
-  mean: [0.72, -0.28, 0.56, -0.12, 0.05]
-  std: [0.67, 0.70, 1.57, 0.67, 0.52]
+  mean: [0.77, -0.30, -0.36, 0.00, 0.00]
+  std: [0.78, 0.60, 0.69, 0.53, 0.52]
