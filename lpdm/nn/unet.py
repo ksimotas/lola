@@ -20,6 +20,11 @@ from typing import Dict, Optional, Sequence, Union
 from .common import ConvNd, LayerNorm, SelfAttentionNd
 
 
+class Residual(nn.Sequential):
+    def forward(self, x: Tensor) -> Tensor:
+        return x + super().forward(x)
+
+
 class UNetBlock(nn.Module):
     r"""Creates a modulated U-Net block module.
 
@@ -64,8 +69,12 @@ class UNetBlock(nn.Module):
         )
 
         if attention_heads is not None:
-            self.block.append(LayerNorm(dim=1))
-            self.block.append(SelfAttentionNd(channels, heads=attention_heads))
+            self.block.append(
+                Residual(
+                    nn.SiLU(),
+                    SelfAttentionNd(channels, heads=attention_heads),
+                )
+            )
 
     def forward(self, x: Tensor, mod: Tensor) -> Tensor:
         r"""
@@ -100,7 +109,7 @@ class UNet(nn.Module):
         stride: The stride of the downsampling convolutions.
         attention_heads: The number of attention heads at each depth.
         dropout: The dropout rate in :math:`[0, 1]`.
-        spatial: The number of spatial dimensions.
+        spatial: The number of spatial dimensions :math:`N`.
         periodic: Whether the spatial dimensions are periodic or not.
     """
 
