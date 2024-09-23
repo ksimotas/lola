@@ -91,7 +91,7 @@ class UNetBlock(nn.Module):
         y = (a + 1) * x + b
         y = self.block(y)
         y = x + c * y
-        y = y / torch.sqrt(1 + c * c)
+        y = y * torch.rsqrt(1 + c * c)
 
         return y
 

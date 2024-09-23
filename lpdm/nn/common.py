@@ -3,6 +3,7 @@ r"""Common layers and modules."""
 __all__ = [
     "ConvNd",
     "LayerNorm",
+    "RMSNorm",
     "SelfAttentionNd",
     "SpectralConvNd",
     "ViewAsComplex",
@@ -78,7 +79,45 @@ class LayerNorm(nn.Module):
 
         variance, mean = torch.var_mean(x, dim=self.dim, keepdim=True)
 
-        return (x - mean) / (variance + self.eps).sqrt()
+        return (x - mean) * torch.rsqrt(variance + self.eps)
+
+
+class RMSNorm(nn.Module):
+    r"""Creates a layer that normalizes features along a dimension.
+
+    .. math:: y = \frac{x}{\sqrt{\mathbb{E}[x^2] + \epsilon}}
+
+    References:
+       | Root Mean Square Layer Normalization (Zhang et al., 2019)
+       | https://arxiv.org/abs/1910.07467
+
+    Arguments:
+        dim: The dimension(s) to normalize.
+        eps: A numerical stability term.
+    """
+
+    def __init__(self, dim: Union[int, Sequence[int]], eps: float = 1e-5):
+        super().__init__()
+
+        self.dim = dim if isinstance(dim, int) else tuple(dim)
+
+        self.register_buffer("eps", torch.as_tensor(eps))
+
+    def extra_repr(self) -> str:
+        return f"dim={self.dim}"
+
+    def forward(self, x: Tensor) -> Tensor:
+        r"""
+        Arguments:
+            x: The input tensor :math:`x`, with shape :math:(*).
+
+        Returns:
+            The normalized tensor :math:`y`, with shape :math:`(*)`.
+        """
+
+        variance = torch.mean(torch.square(x), dim=self.dim, keepdim=True)
+
+        return x * torch.rsqrt(variance + self.eps)
 
 
 class SelfAttentionNd(nn.MultiheadAttention):
