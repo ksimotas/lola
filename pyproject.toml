@@ -3,6 +3,7 @@ name = "lpdm"
 description = "Latent Physics Diffusion Model"
 version = "0.0.0"
 dependencies = [
+  "azula==0.2.2",
   "einops==0.8.0",
   "h5py==3.11.0",
   "numpy==1.26.4",

@@ -10,6 +10,7 @@ from omegaconf import DictConfig
 
 def train(
     cfg: DictConfig,
+    autoencoder: str,
     datasets: str = "/mnt/ceph/users/polymathic/the_well/datasets",
 ):
     import torch
@@ -20,7 +21,8 @@ def train(
     from functools import partial
     from itertools import islice
     from lpdm.data import field_preprocess, get_well_dataset
-    from lpdm.nn.autoencoder import AutoEncoder, AutoEncoderLoss
+    from lpdm.diffusion import DenoiserLoss, get_denoiser
+    from lpdm.nn.autoencoder import AutoEncoder
     from lpdm.optim import get_optimizer, safe_gd_step
     from omegaconf import OmegaConf, open_dict
     from pathlib import Path
@@ -40,14 +42,19 @@ def train(
 
     # Config
     runid = wandb.util.generate_id()
-    runname = f"{cfg.dataset.name}_{cfg.ae.name}_{cfg.optim.name}"
+    runname = f"{cfg.dataset.name}_{cfg.denoiser.name}_{cfg.optim.name}"
 
     runpath = Path(f"~/ceph/mpp-ldm/runs/{runname}_{runid}")
     runpath = runpath.expanduser().resolve()
     runpath.mkdir(parents=True, exist_ok=True)
 
+    aepath = Path(autoencoder)
+    aepath = aepath.expanduser().resolve(strict=True)
+
     with open_dict(cfg):
         cfg.path = str(runpath)
+        cfg.ae = OmegaConf.load(aepath / "config.yaml").ae
+        cfg.ae.path = str(aepath)
 
     if rank == 0:
         OmegaConf.save(cfg, runpath / "config.yaml")
@@ -55,7 +62,8 @@ def train(
     # Data
     trainset = get_well_dataset(
         path=os.path.join(datasets, cfg.dataset.physics, "data/train"),
-        in_steps=1,
+        in_steps=cfg.trajectory.length,
+        dt_stride=cfg.trajectory.stride,
         include_filters=cfg.dataset.include_filters,
     )
 
@@ -80,7 +88,7 @@ def train(
 
     validset = get_well_dataset(
         path=os.path.join(datasets, cfg.dataset.physics, "data/valid"),
-        in_steps=1,
+        in_steps=cfg.trajectory.length,
         include_filters=cfg.dataset.include_filters,
     )
 
@@ -110,23 +118,29 @@ def train(
         transform=cfg.dataset.transform,
     )
 
-    # Model, optimizer & scheduler
-    model = AutoEncoder(
+    # Autoencoder
+    autoencoder = AutoEncoder(
         pix_channels=trainset.metadata.n_fields,
         lat_channels=cfg.ae.lat_channels,
         hid_channels=cfg.ae.hid_channels,
         hid_blocks=cfg.ae.hid_blocks,
         attention_heads=cfg.ae.attention_heads,
         spectral_modes=cfg.ae.spectral_modes,
-        dropout=0.01,
         spatial=2,
     )
 
-    model_loss = AutoEncoderLoss(
-        autoencoder=model,
-        losses=cfg.ae.loss.losses,
-        weights=cfg.ae.loss.weights,
+    autoencoder.load_state_dict(torch.load(aepath / "state.pth"))
+    autoencoder.to(device)
+    autoencoder.eval()
+
+    # Model, optimizer & scheduler
+    denoiser = get_denoiser(
+        shape=(cfg.ae.lat_channels, cfg.trajectory.length, 64, 64),
+        label_features=trainset.metadata.n_constant_scalars,
+        **cfg.denoiser,
     )
+
+    model_loss = DenoiserLoss(denoiser=denoiser, a=3.0, b=3.0)
 
     model = DistributedDataParallel(
         module=model_loss.to(device),
@@ -145,7 +159,7 @@ def train(
     # W&B
     if rank == 0:
         run = wandb.init(
-            project="mpp-ldm-ae",
+            project="mpp-ldm-denoiser",
             id=runid,
             name=runname,
             config=OmegaConf.to_container(cfg),
@@ -169,12 +183,18 @@ def train(
         losses, grads = [], []
 
         for batch in islice(train_loader, steps):
-            x = batch["input_fields"]
-            x = x.to(device, non_blocking=True)
-            x = preprocess(x)
-            x = rearrange(x, "B 1 H W C -> B C H W")
+            with torch.no_grad():
+                x = batch["input_fields"]
+                x = x.to(device, non_blocking=True)
+                x = preprocess(x)
+                x = rearrange(x, "B L H W C -> B L C H W")
+                z = torch.func.vmap(autoencoder.encode)(x)
+                z = rearrange(z, "B L C H W -> B C L H W")
 
-            loss, y = model(x)
+            label = batch["constant_scalars"]
+            label = label.to(device, non_blocking=True)
+
+            loss = model(z, label=label)
             loss.backward()
 
             grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
@@ -217,9 +237,14 @@ def train(
                 x = batch["input_fields"]
                 x = x.to(device, non_blocking=True)
                 x = preprocess(x)
-                x = rearrange(x, "B 1 H W C -> B C H W")
+                x = rearrange(x, "B L H W C -> B L C H W")
+                z = torch.func.vmap(autoencoder.encode)(x)
+                z = rearrange(z, "B L C H W -> B C L H W")
 
-                loss, y = model(x)
+                label = batch["constant_scalars"]
+                label = label.to(device, non_blocking=True)
+
+                loss = model(z, label=label)
                 losses.append(loss)
 
         losses = torch.stack(losses)
@@ -246,7 +271,7 @@ def train(
 
         ## Checkpoint
         if rank == 0:
-            state = model.module.autoencoder.state_dict()
+            state = model.module.denoiser.state_dict()
             torch.save(state, runpath / "state.pth")
 
         dist.barrier()
@@ -261,6 +286,7 @@ def train(
 if __name__ == "__main__":
     # Parser
     parser = argparse.ArgumentParser()
+    parser.add_argument("autoencoder", type=str)
     parser.add_argument("overrides", nargs="*", type=str)
     parser.add_argument("--gpuxl", action="store_true", default=False)
     parser.add_argument("--slurm", action="store_true", default=False)
@@ -269,7 +295,7 @@ if __name__ == "__main__":
 
     # Config(s)
     configs = multi_compose(
-        config_file="./configs/default_autoencoder.yaml",
+        config_file="./configs/default_denoiser.yaml",
         overrides=args.overrides,
     )
 
@@ -279,7 +305,7 @@ if __name__ == "__main__":
         datasets = "/mnt/ceph/users/polymathic/the_well/datasets"
 
     def launch(i: int):
-        train(configs[i], datasets=datasets)
+        train(configs[i], autoencoder=args.autoencoder, datasets=datasets)
 
     # Run
     if args.slurm:
@@ -295,7 +321,7 @@ if __name__ == "__main__":
                 partition="gpuxl" if args.gpuxl else "gpu",
                 constraint="h100",
             ),
-            name="training auto-encoders",
+            name="training denoisers",
             backend="slurm",
             interpreter="torchrun --nnodes 1 --nproc-per-node 4 --standalone",
             env=[
