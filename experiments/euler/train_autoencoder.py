@@ -50,8 +50,7 @@ def train(
         cfg.path = str(runpath)
 
     if rank == 0:
-        with open(runpath / "config.yaml", "w") as f:
-            f.write(OmegaConf.to_yaml(cfg))
+        OmegaConf.save(cfg, runpath / "config.yaml")
 
     # Data
     trainset = get_well_dataset(
