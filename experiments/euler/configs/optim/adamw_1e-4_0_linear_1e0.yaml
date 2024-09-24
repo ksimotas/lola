@@ -1,6 +1,0 @@
-name: "adamw_1e-4_0_linear_1e0"
-optimizer: "adamw"
-learning_rate: 1e-4
-weight_decay: 0.0
-scheduler: "linear"
-grad_clip: 1e0

@@ -1,4 +1,4 @@
-name: "64x64x4_large_attention"
+name: "64x64x${ae.lat_channels}_large_attention"
 lat_channels: 4
 hid_channels: [128, 256, 384, 512]
 hid_blocks: [1, 2, 3, 5]

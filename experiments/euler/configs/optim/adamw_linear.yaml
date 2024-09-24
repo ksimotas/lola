@@ -1,0 +1,6 @@
+name: "${optim.optimizer}_${optim.learning_rate}_${optim.weight_decay}_${optim.scheduler}_${optim.grad_clip}"
+optimizer: "adamw"
+learning_rate: 1e-4
+weight_decay: 0.0
+scheduler: "linear"
+grad_clip: null
