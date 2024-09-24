@@ -1,55 +1,54 @@
-r"""Tests for the lpdm.nn.unet module.
-
-Credits:
-    https://github.com/probabilists/azula
-"""
+r"""Tests for the lpdm.nn.dit module."""
 
 import pytest
 import torch
 
 from pathlib import Path
-from typing import Dict
 
 # isort: split
-from lpdm.nn.unet import UNet
+from lpdm.nn.dit import DiT
 
 
-@pytest.mark.parametrize("length", [15, 16])
+@pytest.mark.parametrize("length", [16])
 @pytest.mark.parametrize("in_channels, out_channels", [(3, 5)])
 @pytest.mark.parametrize("mod_features", [16])
-@pytest.mark.parametrize("attention_heads", [{}, {2: 1}])
-@pytest.mark.parametrize("dropout", [None, 0.1])
+@pytest.mark.parametrize("attention_heads", [1, 4])
 @pytest.mark.parametrize("spatial", [1, 2])
+@pytest.mark.parametrize("patch_size", [4, 8])
+@pytest.mark.parametrize("registers", [0, 3])
 @pytest.mark.parametrize("batch_size", [4])
-def test_UNet(
+def test_DiT(
     tmp_path: Path,
     length: int,
     in_channels: int,
     out_channels: int,
     mod_features: int,
-    attention_heads: Dict[int, int],
-    dropout: float,
+    attention_heads: int,
     spatial: int,
+    patch_size: int,
+    registers: int,
     batch_size: int,
 ):
-    make = lambda: UNet(
+    make = lambda: DiT(
         in_channels=in_channels,
         out_channels=out_channels,
         mod_features=mod_features,
-        hid_channels=(5, 7, 11),
-        hid_blocks=(1, 2, 3),
+        hid_channels=16,
+        hid_blocks=3,
         attention_heads=attention_heads,
-        dropout=dropout,
+        dropout=0.1,
         spatial=spatial,
+        patch_size=patch_size,
+        registers=registers,
     )
 
-    unet = make()
-    unet.train()
+    dit = make()
+    dit.train()
 
     # Call
     x = torch.randn((batch_size, in_channels) + (length,) * spatial)
     mod = torch.randn(batch_size, mod_features)
-    y = unet(x, mod)
+    y = dit(x, mod)
 
     assert y.ndim == x.ndim
     assert y.shape[0] == batch_size
@@ -62,21 +61,21 @@ def test_UNet(
     loss = y.square().sum()
     loss.backward()
 
-    for p in unet.parameters():
+    for p in dit.parameters():
         assert p.grad is not None
         assert torch.all(torch.isfinite(p.grad))
 
     # Save
-    torch.save(unet.state_dict(), tmp_path / "state.pth")
+    torch.save(dit.state_dict(), tmp_path / "state.pth")
 
     # Load
     copy = make()
     copy.load_state_dict(torch.load(tmp_path / "state.pth", weights_only=True))
 
-    unet.eval()
+    dit.eval()
     copy.eval()
 
-    y_unet = unet(x, mod)
+    y_dit = dit(x, mod)
     y_copy = copy(x, mod)
 
-    assert torch.allclose(y_unet, y_copy)
+    assert torch.allclose(y_dit, y_copy)
