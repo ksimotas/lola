@@ -23,7 +23,7 @@ def train(
     from lpdm.data import field_preprocess, get_well_dataset
     from lpdm.diffusion import DenoiserLoss, get_denoiser
     from lpdm.nn.autoencoder import AutoEncoder
-    from lpdm.optim import get_optimizer, safe_gd_step
+    from lpdm.optim import ExponentialMovingAverage, get_optimizer, safe_gd_step
     from omegaconf import OmegaConf, open_dict
     from pathlib import Path
     from torch.nn.parallel import DistributedDataParallel
@@ -141,19 +141,23 @@ def train(
     )
 
     model_loss = DenoiserLoss(denoiser=denoiser, a=3.0, b=3.0)
-
-    model = DistributedDataParallel(
+    model_loss = DistributedDataParallel(
         module=model_loss.to(device),
         device_ids=[device],
     )
 
     optimizer, scheduler = get_optimizer(
-        params=model.parameters(),
+        params=model_loss.parameters(),
         optimizer=cfg.optim.optimizer,
         learning_rate=cfg.optim.learning_rate,
         weight_decay=cfg.optim.weight_decay,
         scheduler=cfg.optim.scheduler,
         epochs=cfg.train.epochs,
+    )
+
+    average = ExponentialMovingAverage(
+        module=model_loss.module.denoiser,
+        decay=cfg.optim.ema_decay,
     )
 
     # W&B
@@ -178,7 +182,7 @@ def train(
         valid_sampler.set_epoch(epoch)
 
         ## Train
-        model.train()
+        model_loss.train()
 
         losses, grads = [], []
 
@@ -194,10 +198,12 @@ def train(
             label = batch["constant_scalars"]
             label = label.to(device, non_blocking=True)
 
-            loss = model(z, label=label)
+            loss = model_loss(z, label=label)
             loss.backward()
 
             grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
+
+            average.update_parameters(model_loss.module.denoiser)
 
             losses.append(loss.detach())
             grads.append(grad_norm)
@@ -228,7 +234,7 @@ def train(
         del losses, losses_list, grads, grads_list
 
         ## Eval
-        model.eval()
+        model_loss.eval()
 
         losses = []
 
@@ -244,7 +250,7 @@ def train(
                 label = batch["constant_scalars"]
                 label = label.to(device, non_blocking=True)
 
-                loss = model(z, label=label)
+                loss = model_loss(z, label=label)
                 losses.append(loss)
 
         losses = torch.stack(losses)
@@ -271,8 +277,11 @@ def train(
 
         ## Checkpoint
         if rank == 0:
-            state = model.module.denoiser.state_dict()
+            state = model_loss.module.denoiser.state_dict()
+            state_ema = average.module.state_dict()
+
             torch.save(state, runpath / "state.pth")
+            torch.save(state_ema, runpath / "state_ema.pth")
 
         dist.barrier()
 

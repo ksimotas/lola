@@ -111,7 +111,7 @@ def train(
     )
 
     # Model, optimizer & scheduler
-    model = AutoEncoder(
+    autoencoder = AutoEncoder(
         pix_channels=trainset.metadata.n_fields,
         lat_channels=cfg.ae.lat_channels,
         hid_channels=cfg.ae.hid_channels,
@@ -123,18 +123,18 @@ def train(
     )
 
     model_loss = AutoEncoderLoss(
-        autoencoder=model,
+        autoencoder=autoencoder,
         losses=cfg.ae.loss.losses,
         weights=cfg.ae.loss.weights,
     )
 
-    model = DistributedDataParallel(
+    model_loss = DistributedDataParallel(
         module=model_loss.to(device),
         device_ids=[device],
     )
 
     optimizer, scheduler = get_optimizer(
-        params=model.parameters(),
+        params=model_loss.parameters(),
         optimizer=cfg.optim.optimizer,
         learning_rate=cfg.optim.learning_rate,
         weight_decay=cfg.optim.weight_decay,
@@ -164,7 +164,7 @@ def train(
         valid_sampler.set_epoch(epoch)
 
         ## Train
-        model.train()
+        model_loss.train()
 
         losses, grads = [], []
 
@@ -174,7 +174,7 @@ def train(
             x = preprocess(x)
             x = rearrange(x, "B 1 H W C -> B C H W")
 
-            loss, y = model(x)
+            loss, y = model_loss(x)
             loss.backward()
 
             grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
@@ -208,7 +208,7 @@ def train(
         del losses, losses_list, grads, grads_list
 
         ## Eval
-        model.eval()
+        model_loss.eval()
 
         losses = []
 
@@ -219,7 +219,7 @@ def train(
                 x = preprocess(x)
                 x = rearrange(x, "B 1 H W C -> B C H W")
 
-                loss, y = model(x)
+                loss, y = model_loss(x)
                 losses.append(loss)
 
         losses = torch.stack(losses)
@@ -246,7 +246,7 @@ def train(
 
         ## Checkpoint
         if rank == 0:
-            state = model.module.autoencoder.state_dict()
+            state = model_loss.module.autoencoder.state_dict()
             torch.save(state, runpath / "state.pth")
 
         dist.barrier()

@@ -1,6 +1,7 @@
 r"""Optimization and training helpers."""
 
 __all__ = [
+    "ExponentialMovingAverage",
     "get_optimizer",
     "safe_gd_step",
 ]
@@ -11,6 +12,37 @@ import torch.nn as nn
 
 from torch import Tensor
 from typing import Iterable, Optional, Tuple
+
+
+class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
+    r"""Creates an exponential moving average (EMA) module.
+
+    Arguments:
+        module: The averaged module.
+        decay: The exponential decay in [0, 1]. If :py:`None`, averaging is skipped.
+    """
+
+    def __init__(
+        self,
+        module: nn.Module,
+        decay: Optional[float] = None,
+    ):
+        if decay is None:
+            module = None
+            multi_avg_fn = None
+        else:
+            multi_avg_fn = torch.optim.swa_utils.get_ema_multi_avg_fn(decay)
+
+        super().__init__(
+            model=module,
+            multi_avg_fn=multi_avg_fn,
+        )
+
+    def update_parameters(self, module: nn.Module):
+        if self.multi_avg_fn is None:
+            self.module = module
+        else:
+            super().update_parameters(module)
 
 
 def get_optimizer(
