@@ -133,7 +133,8 @@ def get_denoiser(
     stride: Union[int, Sequence[int]] = 2,
     # Label
     label_features: int = 0,
-    **absorb,
+    # Ignore
+    name: str = None,
 ) -> nn.Module:
     r"""Instantiates a denoiser."""
 

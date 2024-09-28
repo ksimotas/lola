@@ -19,13 +19,13 @@ def train(
     from einops import rearrange
     from functools import partial
     from itertools import islice
-    from lpdm.data import field_preprocess, get_well_dataset
+    from lpdm.data import field_preprocess, get_dataloader, get_well_dataset
     from lpdm.nn.autoencoder import AutoEncoder, AutoEncoderLoss
     from lpdm.optim import get_optimizer, safe_gd_step
+    from lpdm.utils import process_cpu_count
     from omegaconf import OmegaConf, open_dict
     from pathlib import Path
     from torch.nn.parallel import DistributedDataParallel
-    from torch.utils.data import DataLoader, DistributedSampler
     from tqdm import trange
 
     # DDP
@@ -54,53 +54,37 @@ def train(
 
     # Data
     trainset = get_well_dataset(
-        path=os.path.join(datasets, cfg.dataset.physics, "data/train"),
-        in_steps=1,
+        path=os.path.join(datasets, cfg.dataset.physics),
+        split="train",
+        steps=1,
         include_filters=cfg.dataset.include_filters,
     )
 
-    train_sampler = DistributedSampler(
+    train_loader, train_sampler = get_dataloader(
         dataset=trainset,
-        rank=rank,
-        drop_last=True,
-        shuffle=True,
-        seed=42,
-    )
-
-    train_loader = DataLoader(
-        dataset=trainset,
-        sampler=train_sampler,
         batch_size=cfg.train.batch_size,
-        drop_last=True,
-        shuffle=False,
+        shuffle=True,
         num_workers=32 // world_size,
-        persistent_workers=True,
-        pin_memory=True,
+        rank=rank,
+        world_size=world_size,
+        seed=42,
     )
 
     validset = get_well_dataset(
-        path=os.path.join(datasets, cfg.dataset.physics, "data/valid"),
-        in_steps=1,
+        path=os.path.join(datasets, cfg.dataset.physics),
+        split="valid",
+        steps=1,
         include_filters=cfg.dataset.include_filters,
     )
 
-    valid_sampler = DistributedSampler(
+    valid_loader, valid_sampler = get_dataloader(
         dataset=validset,
-        rank=rank,
-        drop_last=True,
-        shuffle=True,
-        seed=42,
-    )
-
-    valid_loader = DataLoader(
-        dataset=validset,
-        sampler=valid_sampler,
         batch_size=cfg.train.batch_size,
-        drop_last=True,
-        shuffle=False,
-        num_workers=32 // world_size,
-        persistent_workers=True,
-        pin_memory=True,
+        shuffle=True,
+        num_workers=process_cpu_count() // world_size,
+        rank=rank,
+        world_size=world_size,
+        seed=42,
     )
 
     preprocess = partial(
@@ -113,19 +97,12 @@ def train(
     # Model, optimizer & scheduler
     autoencoder = AutoEncoder(
         pix_channels=trainset.metadata.n_fields,
-        lat_channels=cfg.ae.lat_channels,
-        hid_channels=cfg.ae.hid_channels,
-        hid_blocks=cfg.ae.hid_blocks,
-        attention_heads=cfg.ae.attention_heads,
-        spectral_modes=cfg.ae.spectral_modes,
-        dropout=0.01,
-        spatial=2,
+        **cfg.ae,
     )
 
     model_loss = AutoEncoderLoss(
         autoencoder=autoencoder,
-        losses=cfg.ae.loss.losses,
-        weights=cfg.ae.loss.weights,
+        **cfg.ae.loss,
     )
 
     model_loss = DistributedDataParallel(
@@ -135,11 +112,8 @@ def train(
 
     optimizer, scheduler = get_optimizer(
         params=model_loss.parameters(),
-        optimizer=cfg.optim.optimizer,
-        learning_rate=cfg.optim.learning_rate,
-        weight_decay=cfg.optim.weight_decay,
-        scheduler=cfg.optim.scheduler,
         epochs=cfg.train.epochs,
+        **cfg.optim,
     )
 
     # W&B
@@ -262,8 +236,11 @@ if __name__ == "__main__":
     # Parser
     parser = argparse.ArgumentParser()
     parser.add_argument("overrides", nargs="*", type=str)
+    parser.add_argument("--cpus", type=int, default=32)
+    parser.add_argument("--gpus", type=int, default=4)
     parser.add_argument("--gpuxl", action="store_true", default=False)
-    parser.add_argument("--slurm", action="store_true", default=False)
+    parser.add_argument("--ram", type=str, default="256GB")
+    parser.add_argument("--time", type=str, default="2-00:00:00")
 
     args = parser.parse_args()
 
@@ -281,30 +258,23 @@ if __name__ == "__main__":
     def launch(i: int):
         train(configs[i], datasets=datasets)
 
-    # Run
-    if args.slurm:
-        schedule(
-            job(
-                f=launch,
-                name="train",
-                array=len(configs),
-                cpus=32,
-                gpus=4,
-                ram="256GB",
-                time="2-00:00:00",
-                partition="gpuxl" if args.gpuxl else "gpu",
-                constraint="h100",
-            ),
-            name="training auto-encoders",
-            backend="slurm",
-            interpreter="torchrun --nnodes 1 --nproc-per-node 4 --standalone",
-            env=[
-                "export WANDB_SILENT=true",
-                "export XDG_CACHE_HOME=$HOME/.cache",
-            ],
-        )
-    else:
-        for i in range(len(configs)):
-            if i > 0:
-                print("-" * 88)
-            launch(i)
+    schedule(
+        job(
+            f=launch,
+            name="train",
+            array=len(configs),
+            cpus=args.cpus,
+            gpus=args.gpu,
+            ram=args.ram,
+            time=args.time,
+            partition="gpuxl" if args.gpuxl else "gpu",
+            constraint="h100",
+        ),
+        name="training auto-encoders",
+        backend="slurm",
+        interpreter=f"torchrun --nnodes 1 --nproc-per-node {args.gpus} --standalone",
+        env=[
+            "export WANDB_SILENT=true",
+            "export XDG_CACHE_HOME=$HOME/.cache",
+        ],
+    )

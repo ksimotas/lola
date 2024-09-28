@@ -4,3 +4,4 @@ hid_channels: [64, 128, 256, 512]
 hid_blocks: [1, 2, 3, 5]
 attention_heads: {}
 spectral_modes: {}
+dropout: 0.01

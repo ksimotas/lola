@@ -52,6 +52,10 @@ def get_optimizer(
     weight_decay: float = 0.0,
     scheduler: Optional[str] = None,
     epochs: Optional[int] = None,
+    # Ignored
+    name: str = None,
+    grad_clip: float = None,
+    ema_decay: float = None,
 ) -> Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LRScheduler]:
     r"""Instantiates an optimizer and sheduler.
 

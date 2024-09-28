@@ -12,6 +12,7 @@ import math
 import torch
 import torch.nn as nn
 
+from omegaconf import DictConfig
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 from typing import Dict, Optional, Sequence, Tuple, Union
@@ -329,6 +330,8 @@ class AutoEncoder(nn.Module):
         lat_channels: int,
         hid_channels: Sequence[int] = (64, 128, 256),
         hid_blocks: Sequence[int] = (3, 3, 3),
+        name: str = None,  # ignored
+        loss: DictConfig = None,  # ignored
         **kwargs,
     ):
         super().__init__()
@@ -372,6 +375,7 @@ class AutoEncoderLoss(nn.Module):
         autoencoder: AutoEncoder,
         losses: Sequence[str] = ["mse"],  # noqa: B006
         weights: Sequence[float] = [1.0],  # noqa: B006
+        name: str = None,  # ignored
     ):
         super().__init__()
 
