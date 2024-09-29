@@ -8,6 +8,6 @@ trajectory:
   stride: 16
 
 train:
-  epochs: 256
+  epochs: 1024
   epoch_size: 16384
   batch_size: 16

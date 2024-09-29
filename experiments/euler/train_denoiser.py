@@ -276,7 +276,7 @@ if __name__ == "__main__":
     parser.add_argument("--gpus", type=int, default=4)
     parser.add_argument("--gpuxl", action="store_true", default=False)
     parser.add_argument("--ram", type=str, default="256GB")
-    parser.add_argument("--time", type=str, default="2-00:00:00")
+    parser.add_argument("--time", type=str, default="7-00:00:00")
 
     args = parser.parse_args()
 
