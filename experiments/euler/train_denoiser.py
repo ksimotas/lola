@@ -168,9 +168,8 @@ def train(
                 x = batch["input_fields"]
                 x = x.to(device, non_blocking=True)
                 x = preprocess(x)
-                x = rearrange(x, "B L H W C -> B L C H W")
-                z = torch.func.vmap(autoencoder.encode)(x)
-                z = rearrange(z, "B L C H W -> B C L H W")
+                x = rearrange(x, "B L H W C -> B C L H W")
+                z = torch.func.vmap(autoencoder.encode, in_dims=2, out_dims=2)(x)
 
             label = batch["constant_scalars"]
             label = label.to(device, non_blocking=True)
@@ -220,9 +219,8 @@ def train(
                 x = batch["input_fields"]
                 x = x.to(device, non_blocking=True)
                 x = preprocess(x)
-                x = rearrange(x, "B L H W C -> B L C H W")
-                z = torch.func.vmap(autoencoder.encode)(x)
-                z = rearrange(z, "B L C H W -> B C L H W")
+                x = rearrange(x, "B L H W C -> B C L H W")
+                z = torch.func.vmap(autoencoder.encode, in_dims=2, out_dims=2)(x)
 
                 label = batch["constant_scalars"]
                 label = label.to(device, non_blocking=True)
