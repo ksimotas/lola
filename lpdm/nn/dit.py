@@ -22,12 +22,11 @@ from .common import LayerNorm, RMSNorm
 class MultiheadSelfAttention(nn.Module):
     r"""Creates a multi-head self-attention layer.
 
-    Query and key projections are RMS-normalized for stability.
-
     Arguments:
         channels: The number of channels :math:`H \times C`.
         attention_heads: The number of attention heads :math:`H`.
         dropout: The dropout rate in :math:`[0, 1]`.
+        qk_norm: Whether to use query-key RMS-normalization or not.
         checkpointing: Whether to use gradient checkpointing or not.
     """
 
@@ -36,6 +35,7 @@ class MultiheadSelfAttention(nn.Module):
         channels: int,
         attention_heads: int = 1,
         dropout: float = 0.0,
+        qk_norm: bool = True,
         checkpointing: bool = True,
     ):
         super().__init__()
@@ -43,8 +43,12 @@ class MultiheadSelfAttention(nn.Module):
         assert channels % attention_heads == 0
 
         self.qkv_proj = nn.Linear(channels, 3 * channels, bias=False)
-        self.qk_norm = RMSNorm(dim=-1)
         self.y_proj = nn.Linear(channels, channels)
+
+        if qk_norm:
+            self.qk_norm = RMSNorm(dim=-1)
+        else:
+            self.qk_norm = nn.Identity()
 
         self.heads = attention_heads
         self.dropout = dropout
@@ -58,7 +62,7 @@ class MultiheadSelfAttention(nn.Module):
                 with shape :math:`(*, L, H \times C / 2)`.
 
         Returns:
-            The ouput tokens :math:`y`, with shape :math:`(*, L, C)`.
+            The ouput tokens :math:`y`, with shape :math:`(*, L, H \times C)`.
         """
 
         qkv = self.qkv_proj(x)
@@ -83,6 +87,23 @@ class MultiheadSelfAttention(nn.Module):
 
     @staticmethod
     def apply_rope(q: Tensor, k: Tensor, theta: Tensor) -> Tuple[Tensor, Tensor]:
+        r"""
+        References:
+            | RoFormer: Enhanced Transformer with Rotary Position Embedding (Su et al., 2021)
+            | https://arxiv.org/abs/2104.09864
+
+            | Rotary Position Embedding for Vision Transformer (Heo et al., 2024)
+            | https://arxiv.org/abs/2403.13298
+
+        Arguments:
+            q: The query tokens :math:`q`, with shape :math:`(*, L, C)`.
+            k: The key tokens :math:`k`, with shape :math:`(*, L, C)`.
+            theta: Rotary angles, with shape :math:`(*, L, C / 2)`.
+
+        Returns:
+            The rotated query and key tokens, with shape :math:`(*, L, C)`.
+        """
+
         rotation = torch.polar(torch.ones_like(theta), theta)
 
         q = torch.view_as_complex(torch.unflatten(q, -1, (-1, 2)))

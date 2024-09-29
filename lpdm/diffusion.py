@@ -135,7 +135,7 @@ def get_denoiser(
     label_features: int = 0,
     # Ignore
     name: str = None,
-) -> nn.Module:
+) -> GaussianDenoiser:
     r"""Instantiates a denoiser."""
 
     channels, *_ = shape
