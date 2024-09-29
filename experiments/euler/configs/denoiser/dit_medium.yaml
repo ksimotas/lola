@@ -4,6 +4,6 @@ emb_features: 256
 hid_channels: 1024
 hid_blocks: 16
 attention_heads: 16
-dropout: 0.1
-patch_size: 4
+dropout: 0.01
+patch_size: [1, 4, 4]
 registers: 4

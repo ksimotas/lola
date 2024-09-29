@@ -4,8 +4,8 @@ defaults:
   - optim: adamw_linear
 
 trajectory:
-  length: 8
-  stride: 1
+  length: 2
+  stride: 16
 
 train:
   epochs: 256
