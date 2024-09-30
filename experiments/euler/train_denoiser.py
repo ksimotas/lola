@@ -24,7 +24,7 @@ def train(
     from lpdm.diffusion import DenoiserLoss, get_denoiser
     from lpdm.nn.autoencoder import AutoEncoder
     from lpdm.optim import ExponentialMovingAverage, get_optimizer, safe_gd_step
-    from lpdm.utils import process_cpu_count
+    from lpdm.utils import process_cpu_count, randseed
     from omegaconf import OmegaConf, open_dict
     from pathlib import Path
     from torch.nn.parallel import DistributedDataParallel
@@ -53,6 +53,7 @@ def train(
 
     with open_dict(cfg):
         cfg.path = str(runpath)
+        cfg.seed = randseed(runid)
         cfg.ae = OmegaConf.load(aepath / "config.yaml").ae
 
     if rank == 0:
@@ -75,7 +76,7 @@ def train(
         num_workers=process_cpu_count() // world_size,
         rank=rank,
         world_size=world_size,
-        seed=42,
+        seed=cfg.seed,
     )
 
     validset = get_well_dataset(
@@ -93,7 +94,7 @@ def train(
         num_workers=process_cpu_count() // world_size,
         rank=rank,
         world_size=world_size,
-        seed=42,
+        seed=cfg.seed,
     )
 
     preprocess = partial(
@@ -119,6 +120,9 @@ def train(
         label_features=trainset.metadata.n_constant_scalars,
         **cfg.denoiser,
     )
+
+    if cfg.boot_state:
+        denoiser.load_state_dict(torch.load(cfg.boot_state))
 
     model_loss = DenoiserLoss(denoiser=denoiser, a=3.0, b=3.0)
     model_loss = DistributedDataParallel(
@@ -305,6 +309,7 @@ if __name__ == "__main__":
             time=args.time,
             partition="gpuxl" if args.gpuxl else "gpu",
             constraint="h100",
+            exclude="workergpu166",
         ),
         name="training auto-encoders",
         backend="slurm",

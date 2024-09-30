@@ -1,13 +1,26 @@
 r"""Miscellaneous helpers."""
 
 import os
+import random
 import shutil
+
+from typing import Optional, Union
 
 
 def process_cpu_count(pid: int = 0) -> int:
     r"""Returns the number of logical CPUs usable by the calling thread of the current process."""
 
     return len(os.sched_getaffinity(pid))
+
+
+def randseed(data: Optional[Union[int, float, str, bytes]] = None) -> int:
+    r"""Returns a 32bit random seed.
+
+    Arguments:
+        data: Optional data to control seeding.
+    """
+
+    return random.Random(data).getrandbits(32)
 
 
 def map_to_memory(

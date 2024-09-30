@@ -22,7 +22,7 @@ def train(
     from lpdm.data import field_preprocess, get_dataloader, get_well_dataset
     from lpdm.nn.autoencoder import AutoEncoder, AutoEncoderLoss
     from lpdm.optim import get_optimizer, safe_gd_step
-    from lpdm.utils import process_cpu_count
+    from lpdm.utils import process_cpu_count, randseed
     from omegaconf import OmegaConf, open_dict
     from pathlib import Path
     from torch.nn.parallel import DistributedDataParallel
@@ -48,6 +48,7 @@ def train(
 
     with open_dict(cfg):
         cfg.path = str(runpath)
+        cfg.seed = randseed(runid)
 
     if rank == 0:
         OmegaConf.save(cfg, runpath / "config.yaml")
@@ -64,10 +65,10 @@ def train(
         dataset=trainset,
         batch_size=cfg.train.batch_size,
         shuffle=True,
-        num_workers=32 // world_size,
+        num_workers=process_cpu_count() // world_size,
         rank=rank,
         world_size=world_size,
-        seed=42,
+        seed=cfg.seed,
     )
 
     validset = get_well_dataset(
@@ -84,7 +85,7 @@ def train(
         num_workers=process_cpu_count() // world_size,
         rank=rank,
         world_size=world_size,
-        seed=42,
+        seed=cfg.seed,
     )
 
     preprocess = partial(
@@ -99,6 +100,9 @@ def train(
         pix_channels=trainset.metadata.n_fields,
         **cfg.ae,
     )
+
+    if cfg.boot_state:
+        autoencoder.load_state_dict(torch.load(cfg.boot_state))
 
     model_loss = AutoEncoderLoss(
         autoencoder=autoencoder,
@@ -269,6 +273,7 @@ if __name__ == "__main__":
             time=args.time,
             partition="gpuxl" if args.gpuxl else "gpu",
             constraint="h100",
+            exclude="workergpu166",
         ),
         name="training auto-encoders",
         backend="slurm",
