@@ -182,7 +182,7 @@ class DiTBlock(nn.Module):
             The ouput tokens :math:`y`, with shape :math:`(*, L, C)`.
         """
 
-        if indices is None:
+        if indices is None or self.theta is None:
             theta = None
         else:
             theta = torch.einsum("...ij,jk", indices, self.theta)
@@ -213,6 +213,7 @@ class DiT(nn.Module):
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions :math:`N`.
         patch_size: The path size.
+        rope: Whether to use rotary positional embedding (RoPE) or not.
         registers: The number of registers.
         kwargs: Keyword arguments passed to :class:`DiTBlock`.
     """
@@ -228,6 +229,7 @@ class DiT(nn.Module):
         dropout: float = 0.0,
         spatial: int = 2,
         patch_size: Union[int, Sequence[int]] = 4,
+        rope: bool = True,
         registers: int = 0,
         **kwargs,
     ):
@@ -271,7 +273,7 @@ class DiT(nn.Module):
             DiTBlock(
                 channels=hid_channels,
                 mod_features=mod_features,
-                spatial=spatial,
+                spatial=spatial if rope else None,
                 **kwargs,
             )
             for _ in range(hid_blocks)
@@ -305,9 +307,8 @@ class DiT(nn.Module):
 
         shape = x.shape[-self.spatial - 1 : -1]
 
-        indices = torch.cartesian_prod(
-            *(torch.arange(size, dtype=x.dtype, device=x.device) for size in shape)
-        )
+        indices = (torch.arange(size, dtype=x.dtype, device=x.device) for size in shape)
+        indices = torch.cartesian_prod(*indices)
         indices = torch.reshape(indices, shape=(-1, len(shape)))
         indices = torch.cat((indices, self.register_indices), dim=-2)
 

@@ -126,7 +126,9 @@ def get_denoiser(
     attention_heads: Union[int, Dict[int, int]],
     dropout: float = 0.1,
     # DiT
+    qk_norm: bool = True,
     patch_size: Union[int, Sequence[int]] = 4,
+    rope: bool = True,
     registers: int = 0,
     # UNet
     kernel_size: Union[int, Sequence[int]] = 3,
@@ -148,9 +150,11 @@ def get_denoiser(
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
             attention_heads=attention_heads,
+            qk_norm=qk_norm,
             dropout=dropout,
             spatial=len(shape) - 1,
             patch_size=patch_size,
+            rope=rope,
             registers=registers,
         )
     elif arch == "unet":
