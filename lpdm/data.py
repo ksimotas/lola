@@ -7,13 +7,15 @@ __all__ = [
     "isotropic_power_spectrum",
 ]
 
+import glob
+import h5py
 import math
 import os
 import torch
 
 from torch import Tensor
-from torch.utils.data import DataLoader, Dataset, DistributedSampler
-from typing import Dict, Optional, Sequence, Tuple
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSampler
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 try:
     from the_well.benchmark.data.datasets import GenericWellDataset
@@ -80,6 +82,36 @@ def field_postprocess(
     return x
 
 
+def find_hdf5(
+    path: str,
+    include_filters: Sequence[str] = (),
+    exclude_filters: Sequence[str] = (),
+) -> List[str]:
+    r"""Finds HDF5 files in a directory.
+
+    Arguments:
+        path: A path to a directory of HDF5 files.
+        include_filters: Include files whose name contains any of these strings.
+        exclude_filters: Exclude files whose name contains any of these strings
+
+    Returns:
+        The list of HDF5 files.
+    """
+
+    path = os.path.realpath(os.path.expanduser(path), strict=True)
+
+    files = glob.glob(os.path.join(path, "*.hdf5")) + glob.glob(os.path.join(path, "*.h5"))
+    files = sorted(files)
+
+    if include_filters:
+        files = [file for file in files if any(filtr in file for filtr in include_filters)]
+
+    if exclude_filters:
+        files = [file for file in files if not any(filtr in file for filtr in exclude_filters)]
+
+    return files
+
+
 def get_well_dataset(
     path: str,
     split: Optional[str] = None,
@@ -105,13 +137,12 @@ def get_well_dataset(
 
     path = os.path.realpath(os.path.expanduser(path), strict=True)
 
-    if split is not None:
-        if os.path.exists(os.path.join(path, split)):
-            path = os.path.join(path, split)
-        elif os.path.exists(os.path.join(path, "data", split)):
-            path = os.path.join(path, "data", split)
-        else:
-            raise NotADirectoryError(f"{os.path.join(path, split)} does not exist.")
+    if os.path.exists(os.path.join(path, split)):
+        path = os.path.join(path, split)
+    elif os.path.exists(os.path.join(path, "data", split)):
+        path = os.path.join(path, "data", split)
+    else:
+        raise NotADirectoryError(f"{os.path.join(path, split)} does not exist.")
 
     return GenericWellDataset(
         path=path,
@@ -210,3 +241,41 @@ def isotropic_power_spectrum(
     p_iso = p_iso / torch.clip(counts, min=1)
 
     return p_iso, edges
+
+
+class MiniWellDataset(Dataset):
+    r"""Creates a mini Well dataset."""
+
+    def __init__(
+        self,
+        file: str,
+        steps: int = 1,
+        stride: int = 1,
+    ):
+        self.file = h5py.File(file, mode="r")
+
+        self.trajectories = self.file["state"].shape[0]
+        self.steps_per_trajectory = self.file["state"].shape[1]
+
+        self.steps = steps
+        self.stride = stride
+
+    def __len__(self) -> int:
+        return self.trajectories * (self.steps_per_trajectory - self.steps * self.stride + 1)
+
+    def __getitem__(self, i: int) -> Dict[str, Tensor]:
+        crops_per_trajectory = self.steps_per_trajectory - self.steps * self.stride + 1
+
+        i, j = i // crops_per_trajectory, i % crops_per_trajectory
+
+        state = self.file["state"][i, slice(j, j + self.steps * self.stride, self.stride)]
+        label = self.file["label"][i]
+
+        return {
+            "state": torch.as_tensor(state),
+            "label": torch.as_tensor(label),
+        }
+
+    @staticmethod
+    def from_files(files: Iterable[str], **kwargs) -> Dataset:
+        return ConcatDataset([MiniWellDataset(file, **kwargs) for file in files])

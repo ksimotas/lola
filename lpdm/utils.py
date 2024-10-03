@@ -38,7 +38,7 @@ def map_to_memory(
         The file's destination.
     """
 
-    src = os.path.abspath(os.path.expanduser(file))
+    src = os.path.realpath(os.path.expanduser(file), strict=True)
     dst = os.path.join(shm, os.path.relpath(file, "/"))
 
     if os.path.exists(dst):

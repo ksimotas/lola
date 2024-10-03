@@ -12,4 +12,5 @@ train:
   epoch_size: 16384
   batch_size: 16
 
+ae_path: ???
 boot_state: null

@@ -1,30 +1,26 @@
 #!/usr/bin/env python
 
 import argparse
-import os
+import dawgz
+import wandb
 
-from dawgz import job, schedule
-from lpdm.hydra import multi_compose
+from functools import partial
+from lpdm.hydra import compose
 from omegaconf import DictConfig
 
 
-def train(
-    cfg: DictConfig,
-    autoencoder: str,
-    datasets: str = "/mnt/ceph/users/polymathic/the_well/datasets",
-):
+def train(runid: str, cfg: DictConfig):
+    import os
     import torch
     import torch.distributed as dist
     import wandb
 
     from einops import rearrange
-    from functools import partial
     from itertools import islice
-    from lpdm.data import field_preprocess, get_dataloader, get_well_dataset
+    from lpdm.data import MiniWellDataset, find_hdf5, get_dataloader
     from lpdm.diffusion import DenoiserLoss, get_denoiser
-    from lpdm.nn.autoencoder import AutoEncoder
     from lpdm.optim import ExponentialMovingAverage, get_optimizer, safe_gd_step
-    from lpdm.utils import process_cpu_count, randseed
+    from lpdm.utils import map_to_memory, process_cpu_count, randseed
     from omegaconf import OmegaConf, open_dict
     from pathlib import Path
     from torch.nn.parallel import DistributedDataParallel
@@ -41,32 +37,50 @@ def train(
     torch.cuda.set_device(device)
 
     # Config
-    runid = wandb.util.generate_id()
-    runname = f"{cfg.dataset.name}_{cfg.denoiser.name}_{cfg.optim.name}"
+    runname = f"{cfg.denoiser.name}_{cfg.optim.name}"
 
-    runpath = Path(f"~/ceph/mpp-ldm/runs/{runname}_{runid}")
+    runpath = Path(f"~/ceph/mpp-ldm/runs/{runid}_{runname}")
     runpath = runpath.expanduser().resolve()
     runpath.mkdir(parents=True, exist_ok=True)
 
-    aepath = Path(autoencoder)
-    aepath = aepath.expanduser().resolve(strict=True)
+    if rank == 0:
+        os.symlink(os.path.realpath(cfg.ae_path, strict=True), runpath / "autoencoder")
+
+    dist.barrier()
 
     with open_dict(cfg):
         cfg.path = str(runpath)
         cfg.seed = randseed(runid)
-        cfg.ae = OmegaConf.load(aepath / "config.yaml").ae
+        cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml").ae
 
     if rank == 0:
         OmegaConf.save(cfg, runpath / "config.yaml")
-        os.symlink(aepath, runpath / "autoencoder")
 
     # Data
-    trainset = get_well_dataset(
-        path=os.path.join(datasets, cfg.dataset.physics),
-        split="train",
-        steps=cfg.trajectory.length,
-        dt_stride=cfg.trajectory.stride,
+    train_files = find_hdf5(
+        path=runpath / "autoencoder/cache" / cfg.dataset.physics / "train",
         include_filters=cfg.dataset.include_filters,
+    )
+
+    valid_files = find_hdf5(
+        path=runpath / "autoencoder/cache" / cfg.dataset.physics / "valid",
+        include_filters=cfg.dataset.include_filters,
+    )
+
+    if rank == 0:
+        for file in (*train_files, *valid_files):
+            map_to_memory(file, shm=f"/dev/shm/{runid}", exist_ok=False)
+
+    dist.barrier()
+
+    train_files = [
+        map_to_memory(file, shm=f"/dev/shm/{runid}", exist_ok=True) for file in train_files
+    ]
+
+    trainset = MiniWellDataset.from_files(
+        files=train_files,
+        steps=cfg.trajectory.length,
+        stride=cfg.trajectory.stride,
     )
 
     train_loader, train_sampler = get_dataloader(
@@ -79,12 +93,14 @@ def train(
         seed=cfg.seed,
     )
 
-    validset = get_well_dataset(
-        path=os.path.join(datasets, cfg.dataset.physics),
-        split="valid",
+    valid_files = [
+        map_to_memory(file, shm=f"/dev/shm/{runid}", exist_ok=True) for file in valid_files
+    ]
+
+    validset = MiniWellDataset.from_files(
+        files=valid_files,
         steps=cfg.trajectory.length,
-        dt_stride=cfg.trajectory.stride,
-        include_filters=cfg.dataset.include_filters,
+        stride=cfg.trajectory.stride,
     )
 
     valid_loader, valid_sampler = get_dataloader(
@@ -97,27 +113,13 @@ def train(
         seed=cfg.seed,
     )
 
-    preprocess = partial(
-        field_preprocess,
-        mean=torch.as_tensor(cfg.dataset.stats.mean, device=device),
-        std=torch.as_tensor(cfg.dataset.stats.std, device=device),
-        transform=cfg.dataset.transform,
-    )
-
-    # Autoencoder
-    autoencoder = AutoEncoder(
-        pix_channels=trainset.metadata.n_fields,
-        **cfg.ae,
-    )
-
-    autoencoder.load_state_dict(torch.load(aepath / "state.pth"))
-    autoencoder.to(device)
-    autoencoder.eval()
+    item = validset[0]
+    item["state"] = rearrange(item["state"], "L C H W -> C L H W")
 
     # Model, optimizer & scheduler
     denoiser = get_denoiser(
-        shape=(cfg.ae.lat_channels, cfg.trajectory.length, 64, 64),
-        label_features=trainset.metadata.n_constant_scalars,
+        shape=item["state"].shape,
+        label_features=item["label"].numel(),
         **cfg.denoiser,
     )
 
@@ -154,7 +156,7 @@ def train(
     steps = cfg.train.epoch_size // cfg.train.batch_size // world_size
 
     if rank == 0:
-        epochs = trange(cfg.train.epochs, ncols=88, miniters=1)
+        epochs = trange(cfg.train.epochs, ncols=88, ascii=True)
     else:
         epochs = range(cfg.train.epochs)
 
@@ -168,14 +170,11 @@ def train(
         losses, grads = [], []
 
         for batch in islice(train_loader, steps):
-            with torch.no_grad():
-                x = batch["input_fields"]
-                x = x.to(device, non_blocking=True)
-                x = preprocess(x)
-                x = rearrange(x, "B L H W C -> B C L H W")
-                z = torch.func.vmap(autoencoder.encode, in_dims=2, out_dims=2)(x)
+            z = batch["state"]
+            z = z.to(device, non_blocking=True)
+            z = rearrange(z, "B L C H W -> B C L H W")
 
-            label = batch["constant_scalars"]
+            label = batch["label"]
             label = label.to(device, non_blocking=True)
 
             loss = model_loss(z, label=label)
@@ -220,13 +219,11 @@ def train(
 
         with torch.no_grad():
             for batch in islice(valid_loader, steps):
-                x = batch["input_fields"]
-                x = x.to(device, non_blocking=True)
-                x = preprocess(x)
-                x = rearrange(x, "B L H W C -> B C L H W")
-                z = torch.func.vmap(autoencoder.encode, in_dims=2, out_dims=2)(x)
+                z = batch["state"]
+                z = z.to(device, non_blocking=True)
+                z = rearrange(z, "B L C H W -> B C L H W")
 
-                label = batch["constant_scalars"]
+                label = batch["label"]
                 label = label.to(device, non_blocking=True)
 
                 loss = model_loss(z, label=label)
@@ -274,7 +271,6 @@ def train(
 if __name__ == "__main__":
     # Parser
     parser = argparse.ArgumentParser()
-    parser.add_argument("autoencoder", type=str)
     parser.add_argument("overrides", nargs="*", type=str)
     parser.add_argument("--cpus", type=int, default=32)
     parser.add_argument("--gpus", type=int, default=4)
@@ -284,25 +280,19 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Config(s)
-    configs = multi_compose(
+    # Config
+    cfg = compose(
         config_file="./configs/default_denoiser.yaml",
         overrides=args.overrides,
     )
 
-    if args.gpuxl:
-        datasets = "/mnt/gpuxl/polymathic/the_well/datasets"
-    else:
-        datasets = "/mnt/ceph/users/polymathic/the_well/datasets"
+    # Job
+    runid = wandb.util.generate_id()
 
-    def launch(i: int):
-        train(configs[i], autoencoder=args.autoencoder, datasets=datasets)
-
-    schedule(
-        job(
-            f=launch,
+    dawgz.schedule(
+        dawgz.job(
+            f=partial(train, runid, cfg),
             name="train",
-            array=len(configs),
             cpus=args.cpus,
             gpus=args.gpus,
             ram=args.ram,
@@ -311,7 +301,7 @@ if __name__ == "__main__":
             constraint="h100",
             exclude="workergpu166",
         ),
-        name="training auto-encoders",
+        name=f"training denoiser {runid}",
         backend="slurm",
         interpreter=f"torchrun --nnodes 1 --nproc-per-node {args.gpus} --standalone",
         env=[

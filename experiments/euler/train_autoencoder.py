@@ -1,17 +1,20 @@
 #!/usr/bin/env python
 
 import argparse
-import os
+import dawgz
+import wandb
 
-from dawgz import job, schedule
-from lpdm.hydra import multi_compose
+from functools import partial
+from lpdm.hydra import compose
 from omegaconf import DictConfig
 
 
 def train(
+    runid: str,
     cfg: DictConfig,
     datasets: str = "/mnt/ceph/users/polymathic/the_well/datasets",
 ):
+    import os
     import torch
     import torch.distributed as dist
     import wandb
@@ -39,10 +42,9 @@ def train(
     torch.cuda.set_device(device)
 
     # Config
-    runid = wandb.util.generate_id()
-    runname = f"{cfg.dataset.name}_{cfg.ae.name}_{cfg.optim.name}"
+    runname = f"{cfg.ae.name}_{cfg.optim.name}"
 
-    runpath = Path(f"~/ceph/mpp-ldm/runs/{runname}_{runid}")
+    runpath = Path(f"~/ceph/mpp-ldm/runs/{runid}_{runname}")
     runpath = runpath.expanduser().resolve()
     runpath.mkdir(parents=True, exist_ok=True)
 
@@ -133,7 +135,7 @@ def train(
     steps = cfg.train.epoch_size // cfg.train.batch_size // world_size
 
     if rank == 0:
-        epochs = trange(cfg.train.epochs, ncols=88, miniters=1)
+        epochs = trange(cfg.train.epochs, ncols=88, ascii=True)
     else:
         epochs = range(cfg.train.epochs)
 
@@ -248,8 +250,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Config(s)
-    configs = multi_compose(
+    # Config
+    cfg = compose(
         config_file="./configs/default_autoencoder.yaml",
         overrides=args.overrides,
     )
@@ -259,14 +261,13 @@ if __name__ == "__main__":
     else:
         datasets = "/mnt/ceph/users/polymathic/the_well/datasets"
 
-    def launch(i: int):
-        train(configs[i], datasets=datasets)
+    # Job
+    runid = wandb.util.generate_id()
 
-    schedule(
-        job(
-            f=launch,
+    dawgz.schedule(
+        dawgz.job(
+            f=partial(train, runid, cfg, datasets),
             name="train",
-            array=len(configs),
             cpus=args.cpus,
             gpus=args.gpu,
             ram=args.ram,
@@ -275,7 +276,7 @@ if __name__ == "__main__":
             constraint="h100",
             exclude="workergpu166",
         ),
-        name="training auto-encoders",
+        name=f"training auto-encoder {runid}",
         backend="slurm",
         interpreter=f"torchrun --nnodes 1 --nproc-per-node {args.gpus} --standalone",
         env=[
