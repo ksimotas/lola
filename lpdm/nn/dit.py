@@ -166,9 +166,9 @@ class DiTBlock(nn.Module):
 
         # MLP
         self.mlp = nn.Sequential(
-            nn.Linear(channels, channels),
+            nn.Linear(channels, 4 * channels),
             nn.SiLU(),
-            nn.Linear(channels, channels),
+            nn.Linear(4 * channels, channels),
         )
 
     def forward(self, x: Tensor, mod: Tensor, indices: Tensor = None) -> Tensor:

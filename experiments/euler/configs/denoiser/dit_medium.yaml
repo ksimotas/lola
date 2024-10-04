@@ -4,8 +4,8 @@ emb_features: 256
 hid_channels: 1024
 hid_blocks: 16
 attention_heads: 16
-qk_norm: false
+qk_norm: true
 dropout: 0.01
-patch_size: [1, 4, 4]
-rope: false
+patch_size: [1, 2, 2]
+rope: true
 registers: 0
