@@ -14,7 +14,8 @@ from lpdm.nn.dit import DiT
 @pytest.mark.parametrize("mod_features", [16])
 @pytest.mark.parametrize("attention_heads", [1, 4])
 @pytest.mark.parametrize("spatial", [1, 2])
-@pytest.mark.parametrize("patch_size", [4, 8])
+@pytest.mark.parametrize("patch_size", [2, 4])
+@pytest.mark.parametrize("window_size", [None, 1])
 @pytest.mark.parametrize("registers", [0, 3])
 @pytest.mark.parametrize("batch_size", [4])
 def test_DiT(
@@ -26,6 +27,7 @@ def test_DiT(
     attention_heads: int,
     spatial: int,
     patch_size: int,
+    window_size: int,
     registers: int,
     batch_size: int,
 ):
@@ -33,12 +35,13 @@ def test_DiT(
         in_channels=in_channels,
         out_channels=out_channels,
         mod_features=mod_features,
-        hid_channels=16,
+        hid_channels=64,
         hid_blocks=3,
         attention_heads=attention_heads,
         dropout=0.1,
         spatial=spatial,
         patch_size=patch_size,
+        window_size=None if window_size is None else (window_size,) * spatial,
         registers=registers,
     )
 

@@ -8,6 +8,7 @@ __all__ = [
 import math
 import torch
 import torch.nn as nn
+import xformers.components.attention.core as xf
 
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
@@ -51,10 +52,15 @@ class MultiheadSelfAttention(nn.Module):
             self.qk_norm = nn.Identity()
 
         self.heads = attention_heads
-        self.dropout = dropout
+        self.dropout = nn.Dropout(dropout)
         self.checkpointing = checkpointing
 
-    def _forward(self, x: Tensor, theta: Tensor = None) -> Tensor:
+    def _forward(
+        self,
+        x: Tensor,
+        theta: Optional[Tensor] = None,
+        mask: Optional[Tensor] = None,
+    ) -> Tensor:
         r"""
         Arguments:
             x: The input tokens :math:`x`, with shape :math:`(*, L, H \times C)`.
@@ -73,12 +79,23 @@ class MultiheadSelfAttention(nn.Module):
             theta = rearrange(theta, "... L (H C) -> ... H L C", H=self.heads)
             q, k = self.apply_rope(q, k, theta)
 
-        y = torch.nn.functional.scaled_dot_product_attention(
-            query=q,
-            key=k,
-            value=v,
-            dropout_p=self.dropout if self.training else 0,
-        )
+        if xf._has_cpp_library and isinstance(mask, xf.SparseCS):
+            y = xf.scaled_dot_product_attention(
+                q=rearrange(q, "B H L C -> (B H) L C"),
+                k=rearrange(k, "B H L C -> (B H) L C"),
+                v=rearrange(v, "B H L C -> (B H) L C"),
+                att_mask=mask,
+                dropout=self.dropout if self.training else None,
+            )
+            y = rearrange(y, "(B H) L C -> B H L C", H=self.heads)
+        else:
+            y = torch.nn.functional.scaled_dot_product_attention(
+                query=q,
+                key=k,
+                value=v,
+                attn_mask=mask,
+                dropout_p=self.dropout.p if self.training else 0,
+            )
 
         y = rearrange(y, "... H L C -> ... L (H C)")
         y = self.y_proj(y)
@@ -114,11 +131,16 @@ class MultiheadSelfAttention(nn.Module):
 
         return q, k
 
-    def forward(self, x: Tensor, theta: Tensor = None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        theta: Optional[Tensor] = None,
+        mask: Optional[Tensor] = None,
+    ) -> Tensor:
         if self.checkpointing:
-            return checkpoint(self._forward, x, theta, use_reentrant=False)
+            return checkpoint(self._forward, x, theta, mask, use_reentrant=False)
         else:
-            return self._forward(x, theta)
+            return self._forward(x, theta, mask)
 
 
 class DiTBlock(nn.Module):
@@ -171,12 +193,19 @@ class DiTBlock(nn.Module):
             nn.Linear(4 * channels, channels),
         )
 
-    def forward(self, x: Tensor, mod: Tensor, indices: Tensor = None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        mod: Tensor,
+        indices: Optional[Tensor] = None,
+        mask: Optional[Tensor] = None,
+    ) -> Tensor:
         r"""
         Arguments:
             x: The input tokens :math:`x`, with shape :math:`(*, L, C)`.
             mod: The modulation vector, with shape :math:`(D)` or :math:`(*, D)`.
             indices: The postition indices, with shape :math:`(*, L, N)`.
+            mask: The attention mask, with shape :math:`(*, L, L)`.
 
         Returns:
             The ouput tokens :math:`y`, with shape :math:`(*, L, C)`.
@@ -190,7 +219,7 @@ class DiTBlock(nn.Module):
         a1, b1, c1, a2, b2, c2 = self.ada_zero(mod)
 
         y = (a1 + 1) * self.norm(x) + b1
-        y = self.msa(y, theta)
+        y = self.msa(y, theta, mask)
         y = (x + c1 * y) * torch.rsqrt(1 + c1 * c1)
 
         y = (a2 + 1) * self.norm(y) + b2
@@ -213,6 +242,7 @@ class DiT(nn.Module):
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions :math:`N`.
         patch_size: The path size.
+        window_size: The local attention window size.
         rope: Whether to use rotary positional embedding (RoPE) or not.
         registers: The number of registers.
         kwargs: Keyword arguments passed to :class:`DiTBlock`.
@@ -229,6 +259,7 @@ class DiT(nn.Module):
         dropout: float = 0.0,
         spatial: int = 2,
         patch_size: Union[int, Sequence[int]] = 4,
+        window_size: Optional[Sequence[int]] = None,
         rope: bool = True,
         registers: int = 0,
         **kwargs,
@@ -280,16 +311,12 @@ class DiT(nn.Module):
         ])
 
         self.spatial = spatial
-        self.path_size = patch_size
+        self.window_size = window_size
 
         self.register_tokens = nn.Parameter(torch.randn(registers, hid_channels))
         self.register_buffer(
             "register_indices",
-            repeat(
-                tensor=torch.arange(-registers, 0, dtype=torch.get_default_dtype()) - 42,
-                pattern="R -> R N",
-                N=spatial,
-            ).clone(),
+            repeat(torch.arange(-registers, 0), "R -> R n", n=spatial).clone(),
         )
 
     def forward(self, x: Tensor, mod: Tensor) -> Tensor:
@@ -306,11 +333,27 @@ class DiT(nn.Module):
         x = self.in_proj(x)
 
         shape = x.shape[-self.spatial - 1 : -1]
+        numel = math.prod(shape)
 
-        indices = (torch.arange(size, dtype=x.dtype, device=x.device) for size in shape)
+        indices = (torch.arange(size, device=x.device) for size in shape)
         indices = torch.cartesian_prod(*indices)
         indices = torch.reshape(indices, shape=(-1, len(shape)))
         indices = torch.cat((indices, self.register_indices), dim=-2)
+
+        if self.window_size is None:
+            mask = None
+        else:
+            delta = torch.abs(indices[:, None] - indices[None, :])
+            delta = torch.minimum(delta, delta.new_tensor(shape) - delta)
+
+            mask = torch.all(delta <= indices.new_tensor(self.window_size), dim=-1)
+            mask[numel:, :] = True
+            mask[:, numel:] = True
+
+            if xf._has_cpp_library:
+                mask = xf.SparseCS(mask, device=mask.device)
+
+        indices = indices.to(dtype=x.dtype)
 
         x = torch.flatten(x, -self.spatial - 1, -2)
         x = torch.cat((x, self.register_tokens.expand(*x.shape[:-2], -1, -1)), dim=-2)
@@ -318,9 +361,9 @@ class DiT(nn.Module):
         x = x + self.positional_embedding(indices / indices.new_tensor(shape))
 
         for block in self.blocks:
-            x = block(x, mod, indices)
+            x = block(x, mod, indices=indices, mask=mask)
 
-        x = torch.narrow(x, start=0, length=math.prod(shape), dim=-2)
+        x = torch.narrow(x, start=0, length=numel, dim=-2)
         x = torch.unflatten(x, sizes=shape, dim=-2)
 
         x = self.out_proj(x)

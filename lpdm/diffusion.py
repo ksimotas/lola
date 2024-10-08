@@ -126,6 +126,7 @@ def get_denoiser(
     # DiT
     qk_norm: bool = True,
     patch_size: Union[int, Sequence[int]] = 4,
+    window_size: Optional[Sequence[int]] = None,
     rope: bool = True,
     registers: int = 0,
     # UNet
@@ -152,6 +153,7 @@ def get_denoiser(
             dropout=dropout,
             spatial=len(shape) - 1,
             patch_size=patch_size,
+            window_size=window_size,
             rope=rope,
             registers=registers,
         )
