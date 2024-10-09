@@ -10,7 +10,7 @@ import math
 import torch
 import torch.nn as nn
 
-from azula.denoise import Gaussian, GaussianDenoiser
+from azula.denoise import Gaussian, GaussianDenoiser, PreconditionedDenoiser
 from azula.nn.utils import FlattenWrapper
 from azula.noise import Schedule, VESchedule
 from torch import Tensor
@@ -55,15 +55,11 @@ class ImprovedPreconditionedDenoiser(GaussianDenoiser):
         schedule: A noise schedule.
     """
 
-    def __init__(self, backbone: nn.Module, schedule: Optional[Schedule] = None):
+    def __init__(self, backbone: nn.Module, schedule: Schedule):
         super().__init__()
 
         self.backbone = backbone
-
-        if schedule is None:
-            self.schedule = VESchedule(sigma_min=1e-3, sigma_max=1e3)
-        else:
-            self.schedule = schedule
+        self.schedule = schedule
 
     def forward(self, x_t: Tensor, t: Tensor, **kwargs) -> Gaussian:
         alpha_t, sigma_t = self.schedule(t)
@@ -125,6 +121,8 @@ def get_denoiser(
     hid_blocks: Union[int, Sequence[int]],
     attention_heads: Union[int, Dict[int, int]],
     dropout: float = 0.1,
+    # Denoiser
+    improved: bool = True,
     # DiT
     qk_norm: bool = True,
     patch_size: Union[int, Sequence[int]] = 4,
@@ -145,7 +143,7 @@ def get_denoiser(
     if arch == "dit":
         backbone = DiT(
             in_channels=channels,
-            out_channels=2 * channels,
+            out_channels=2 * channels if improved else channels,
             mod_features=emb_features,
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
@@ -160,7 +158,7 @@ def get_denoiser(
     elif arch == "unet":
         backbone = UNet(
             in_channels=channels,
-            out_channels=2 * channels,
+            out_channels=2 * channels if improved else channels,
             mod_features=emb_features,
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
@@ -184,15 +182,20 @@ def get_denoiser(
     else:
         label_embedding = None
 
-    denoiser = ImprovedPreconditionedDenoiser(
-        backbone=FlattenWrapper(
-            wrappee=EmbeddingWrapper(
-                backbone=backbone,
-                time_embedding=time_embedding,
-                label_embedding=label_embedding,
-            ),
-            shape=shape,
+    backbone = FlattenWrapper(
+        wrappee=EmbeddingWrapper(
+            backbone=backbone,
+            time_embedding=time_embedding,
+            label_embedding=label_embedding,
         ),
+        shape=shape,
     )
+
+    schedule = VESchedule(sigma_min=1e-3, sigma_max=1e3)
+
+    if improved:
+        denoiser = ImprovedPreconditionedDenoiser(backbone, schedule)
+    else:
+        denoiser = PreconditionedDenoiser(backbone, schedule)
 
     return denoiser

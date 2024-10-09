@@ -1,5 +1,6 @@
-name: "unet_medium"
+name: "unet_medium_${denoiser.improved}"
 arch: "unet"
+improved: true
 emb_features: 256
 hid_channels: [64, 128, 256, 512]
 hid_blocks: [3, 3, 3, 3]

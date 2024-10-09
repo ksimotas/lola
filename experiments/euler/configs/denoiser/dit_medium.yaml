@@ -1,5 +1,6 @@
-name: "dit_medium"
+name: "dit_medium_${denoiser.improved}"
 arch: "dit"
+improved: true
 emb_features: 256
 hid_channels: 1024
 hid_blocks: 16
