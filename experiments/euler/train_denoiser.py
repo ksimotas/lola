@@ -160,6 +160,8 @@ def train(runid: str, cfg: DictConfig):
     else:
         epochs = range(cfg.train.epochs)
 
+    best_valid_loss = float("inf")
+
     for epoch in epochs:
         train_sampler.set_epoch(epoch)
         valid_sampler.set_epoch(epoch)
@@ -205,10 +207,10 @@ def train(runid: str, cfg: DictConfig):
             grads = torch.cat(grads_list).cpu()
 
             logs = {}
-            logs["train/loss/mean"] = losses.mean()
-            logs["train/loss/std"] = losses.std()
-            logs["train/grad_norm/mean"] = grads.mean()
-            logs["train/grad_norm/std"] = grads.std()
+            logs["train/loss/mean"] = losses.mean().item()
+            logs["train/loss/std"] = losses.std().item()
+            logs["train/grad_norm/mean"] = grads.mean().item()
+            logs["train/grad_norm/std"] = grads.std().item()
 
         del losses, losses_list, grads, grads_list
 
@@ -241,8 +243,8 @@ def train(runid: str, cfg: DictConfig):
         if rank == 0:
             losses = torch.stack(losses_list).cpu()
 
-            logs["valid/loss/mean"] = losses.mean()
-            logs["valid/loss/std"] = losses.std()
+            logs["valid/loss/mean"] = losses.mean().item()
+            logs["valid/loss/std"] = losses.std().item()
 
             run.log(logs)
 
@@ -258,6 +260,12 @@ def train(runid: str, cfg: DictConfig):
 
             torch.save(state, runpath / "state.pth")
             torch.save(state_ema, runpath / "state_ema.pth")
+
+            if logs["valid/loss/mean"] < best_valid_loss:
+                best_valid_loss = logs["valid/loss/mean"]
+
+                torch.save(state, runpath / "state_best.pth")
+                torch.save(state_ema, runpath / "state_best_ema.pth")
 
         dist.barrier()
 
