@@ -8,7 +8,8 @@ __all__ = [
 import math
 import torch
 import torch.nn as nn
-import xformers.components.attention.core as xf
+import xformers.components.attention.core as xfa
+import xformers.sparse as xfs
 
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
@@ -59,7 +60,7 @@ class MultiheadSelfAttention(nn.Module):
         self,
         x: Tensor,
         theta: Optional[Tensor] = None,
-        mask: Optional[Tensor] = None,
+        mask: Optional[Union[Tensor, xfs.SparseCSRTensor]] = None,
     ) -> Tensor:
         r"""
         Arguments:
@@ -79,12 +80,12 @@ class MultiheadSelfAttention(nn.Module):
             theta = rearrange(theta, "... L (H C) -> ... H L C", H=self.heads)
             q, k = self.apply_rope(q, k, theta)
 
-        if xf._has_cpp_library and isinstance(mask, xf.SparseCS):
-            y = xf.scaled_dot_product_attention(
+        if isinstance(mask, xfs.SparseCSRTensor):
+            y = xfa.scaled_dot_product_attention(
                 q=rearrange(q, "B H L C -> (B H) L C"),
                 k=rearrange(k, "B H L C -> (B H) L C"),
                 v=rearrange(v, "B H L C -> (B H) L C"),
-                att_mask=mask,
+                att_mask=xfa.SparseCS._wrap(mask),
                 dropout=self.dropout if self.training else None,
             )
             y = rearrange(y, "(B H) L C -> B H L C", H=self.heads)
@@ -135,7 +136,7 @@ class MultiheadSelfAttention(nn.Module):
         self,
         x: Tensor,
         theta: Optional[Tensor] = None,
-        mask: Optional[Tensor] = None,
+        mask: Optional[Union[Tensor, xfs.SparseCSRTensor]] = None,
     ) -> Tensor:
         if self.checkpointing:
             return checkpoint(self._forward, x, theta, mask, use_reentrant=False)
@@ -350,8 +351,8 @@ class DiT(nn.Module):
             mask[numel:, :] = True
             mask[:, numel:] = True
 
-            if xf._has_cpp_library:
-                mask = xf.SparseCS(mask, device=mask.device)
+            if xfa._has_cpp_library:
+                mask = xfa.SparseCS(mask, device=mask.device)._mat
 
         indices = indices.to(dtype=x.dtype)
 
@@ -370,3 +371,52 @@ class DiT(nn.Module):
         x = self.unpatch(x)
 
         return x
+
+
+# fmt: off
+def monkey_coo_to_csr(m, n, row_indices, column_indices):
+    row_offsets = row_indices.bincount(minlength=m).cumsum(0, dtype=row_indices.dtype)
+    row_offsets = torch.nn.functional.pad(row_offsets, (1, 0))
+
+    return row_offsets, column_indices
+
+def monkey_round_nnz(mask, divisible_by=4):
+    nnz = torch.count_nonzero(mask)
+    cunz = torch.cumsum(~mask.flatten(), dim=0)
+    flip = cunz <= (-nnz) % divisible_by
+
+    return torch.logical_or(mask, flip.reshape_as(mask))
+
+def monkey_masked_matmul(cls, a, b, mask):
+    assert mask.shape[1] == a.shape[1]
+    assert mask.shape[2] == b.shape[2]
+
+    values = mask._SparseCSRTensor__values
+    row_indices = mask._SparseCSRTensor__row_indices
+    row_offsets = mask._SparseCSRTensor__row_offsets
+    column_indices = mask._SparseCSRTensor__column_indices
+    tansp_info = mask._SparseCSRTensor__transp_info
+
+    out = xfs._csr_ops._sddmm.apply(
+        a.contiguous(),
+        b.transpose(-2, -1).contiguous(),
+        row_indices,
+        row_offsets,
+        column_indices,
+        tansp_info,
+    )
+    out = torch.where(values, out, float("-inf"))
+
+    return cls._wrap(
+        mask.shape,
+        out,
+        row_indices,
+        row_offsets,
+        column_indices,
+        tansp_info,
+    )
+
+xfs.utils._coo_to_csr = monkey_coo_to_csr
+xfs.utils._round_nnz = monkey_round_nnz
+xfs.SparseCSRTensor._masked_matmul = classmethod(monkey_masked_matmul)
+# fmt: on
