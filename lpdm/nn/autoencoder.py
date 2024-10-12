@@ -18,7 +18,7 @@ from torch.utils.checkpoint import checkpoint
 from typing import Dict, Optional, Sequence, Tuple, Union
 
 # isort: split
-from .common import (
+from .layers import (
     ConvNd,
     SelfAttentionNd,
     SpectralConvNd,

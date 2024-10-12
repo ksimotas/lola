@@ -17,7 +17,7 @@ from torch import Tensor
 from typing import Dict, Optional, Sequence, Union
 
 # isort: split
-from .common import ConvNd, LayerNorm, SelfAttentionNd
+from .layers import ConvNd, LayerNorm, SelfAttentionNd
 
 
 class Residual(nn.Sequential):
