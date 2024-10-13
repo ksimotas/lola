@@ -16,7 +16,6 @@ from einops.layers.torch import Rearrange
 from torch import Tensor
 from typing import Dict, Optional, Sequence, Union
 
-# isort: split
 from .layers import ConvNd, LayerNorm, SelfAttentionNd
 
 

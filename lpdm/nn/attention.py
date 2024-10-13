@@ -14,7 +14,6 @@ from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 from typing import Optional, Tuple, Union
 
-# isort: split
 from .layers import RMSNorm
 
 

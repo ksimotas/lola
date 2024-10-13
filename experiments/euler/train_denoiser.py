@@ -5,8 +5,9 @@ import dawgz
 import wandb
 
 from functools import partial
-from lpdm.hydra import compose
 from omegaconf import DictConfig
+
+from lpdm.hydra import compose
 
 
 def train(runid: str, cfg: DictConfig):
@@ -17,14 +18,15 @@ def train(runid: str, cfg: DictConfig):
 
     from einops import rearrange
     from itertools import islice
-    from lpdm.data import MiniWellDataset, find_hdf5, get_dataloader
-    from lpdm.diffusion import DenoiserLoss, get_denoiser
-    from lpdm.optim import ExponentialMovingAverage, get_optimizer, safe_gd_step
-    from lpdm.utils import map_to_memory, process_cpu_count, randseed
     from omegaconf import OmegaConf, open_dict
     from pathlib import Path
     from torch.nn.parallel import DistributedDataParallel
     from tqdm import trange
+
+    from lpdm.data import MiniWellDataset, find_hdf5, get_dataloader
+    from lpdm.diffusion import DenoiserLoss, get_denoiser
+    from lpdm.optim import ExponentialMovingAverage, get_optimizer, safe_gd_step
+    from lpdm.utils import map_to_memory, process_cpu_count, randseed
 
     # DDP
     dist.init_process_group(backend="nccl")

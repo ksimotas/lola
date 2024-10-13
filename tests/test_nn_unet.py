@@ -10,7 +10,6 @@ import torch
 from pathlib import Path
 from typing import Dict
 
-# isort: split
 from lpdm.nn.unet import UNet
 
 

@@ -20,11 +20,12 @@ def cache_latent(
 
     from einops import rearrange
     from functools import partial
-    from lpdm.data import field_preprocess, get_well_dataset
-    from lpdm.nn.autoencoder import AutoEncoder
     from omegaconf import OmegaConf
     from pathlib import Path
     from tqdm import trange
+
+    from lpdm.data import field_preprocess, get_well_dataset
+    from lpdm.nn.autoencoder import AutoEncoder
 
     device = torch.device("cuda")
 

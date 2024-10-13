@@ -17,7 +17,6 @@ from torch import Tensor
 from torch.distributions import Beta
 from typing import Dict, Optional, Sequence, Union
 
-# isort: split
 from .nn.dit import DiT
 from .nn.embedding import SineEncoding
 from .nn.unet import UNet

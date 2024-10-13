@@ -5,7 +5,6 @@ import torch
 
 from pathlib import Path
 
-# isort: split
 from lpdm.nn.dit import DiT
 
 

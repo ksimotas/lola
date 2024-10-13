@@ -17,7 +17,6 @@ from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 from typing import Dict, Optional, Sequence, Tuple, Union
 
-# isort: split
 from .layers import (
     ConvNd,
     SelfAttentionNd,
