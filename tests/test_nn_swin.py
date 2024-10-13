@@ -1,45 +1,46 @@
-r"""Tests for the lpdm.nn.unet module.
-
-Credits:
-    https://github.com/probabilists/azula
-"""
+r"""Tests for the lpdm.nn.swin module."""
 
 import pytest
 import torch
 
 from pathlib import Path
-from typing import Dict
 
-from lpdm.nn.unet import UNet
+from lpdm.nn.swin import Swin
 
 
-@pytest.mark.parametrize("length", [15, 16])
+@pytest.mark.parametrize("length", [16])
 @pytest.mark.parametrize("in_channels, out_channels", [(3, 5)])
 @pytest.mark.parametrize("mod_features", [16])
-@pytest.mark.parametrize("attention_heads", [{}, {2: 1}])
+@pytest.mark.parametrize("attention_heads", [1, 4])
 @pytest.mark.parametrize("dropout", [None, 0.1])
 @pytest.mark.parametrize("spatial", [1, 2])
+@pytest.mark.parametrize("patch_size", [2, 4])
+@pytest.mark.parametrize("window_size", [None, 4])
 @pytest.mark.parametrize("batch_size", [4])
-def test_UNet(
+def test_Swin(
     tmp_path: Path,
     length: int,
     in_channels: int,
     out_channels: int,
     mod_features: int,
-    attention_heads: Dict[int, int],
+    attention_heads: int,
     dropout: float,
     spatial: int,
+    patch_size: int,
+    window_size: int,
     batch_size: int,
 ):
-    make = lambda: UNet(
+    make = lambda: Swin(
         in_channels=in_channels,
         out_channels=out_channels,
         mod_features=mod_features,
-        hid_channels=(5, 7, 11),
-        hid_blocks=(1, 2, 3),
+        hid_channels=64,
+        hid_blocks=3,
         attention_heads=attention_heads,
         dropout=dropout,
         spatial=spatial,
+        patch_size=patch_size,
+        window_size=(window_size,) * spatial,
     )
 
     net = make()

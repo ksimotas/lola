@@ -1,37 +1,38 @@
-r"""Diffusion Transformer (DiT) building blocks.
+r"""Swin transformer building blocks.
 
 References:
-    | Scalable Diffusion Models with Transformers (Peebles et al., 2022)
-    | https://arxiv.org/abs/2212.09748
+    | Swin Transformer: Hierarchical Vision Transformer using Shifted Windows (Liu et al., 2021)
+    | https://arxiv.org/abs/2103.14030
 """
 
 __all__ = [
-    "DiTBlock",
-    "DiT",
+    "SwinBlock",
+    "Swin",
 ]
 
 import functools
 import math
 import torch
 import torch.nn as nn
-import xformers.components.attention.core as xfa
 
-from einops import repeat
+from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import Tensor
-from typing import Hashable, Optional, Sequence, Tuple, Union
+from typing import Hashable, Optional, Sequence, Union
 
 from .attention import MultiheadSelfAttention
 from .layers import LayerNorm
 
 
-class DiTBlock(nn.Module):
-    r"""Creates a DiT block module.
+class SwinBlock(nn.Module):
+    r"""Creates a Swin transformer block module.
 
     Arguments:
         channels: The number of channels :math:`C`.
         mod_features: The number of modulating features :math:`D`.
-        spatial: The number of spatial dimensinons :math:`N`.
+        spatial: The number of spatial dimensions :math:`N`.
+        window_size: The local attention window size.
+        shifted: Whether the windows are shifted or not.
         rope: Whether to use rotary positional embedding (RoPE) or not.
         kwargs: Keyword arguments passed to :class:`MultiheadSelfAttention`.
     """
@@ -41,10 +42,14 @@ class DiTBlock(nn.Module):
         channels: int,
         mod_features: int,
         spatial: int = 2,
+        window_size: Sequence[int] = (4, 4),
+        shifted: bool = False,
         rope: bool = True,
         **kwargs,
     ):
         super().__init__()
+
+        assert len(window_size) == spatial
 
         # Ada-zero
         self.norm = LayerNorm(dim=-1)
@@ -52,18 +57,23 @@ class DiTBlock(nn.Module):
             nn.Linear(mod_features, mod_features),
             nn.SiLU(),
             nn.Linear(mod_features, 6 * channels),
-            Rearrange("... (n C) -> n ... 1 C", n=6),
+            Rearrange("... (n C) -> n ..." + " 1" * spatial + " C", n=6),
         )
 
         layer = self.ada_zero[-2]
         layer.weight = nn.Parameter(layer.weight * 1e-2)
+
+        # Window
+        self.spatial = spatial
+        self.window_size = window_size
+        self.shifted = shifted
 
         # MSA
         self.msa = MultiheadSelfAttention(channels, **kwargs)
 
         ## RoPE
         if rope:
-            amplitude = 1e4 ** -torch.rand(channels // 2)
+            amplitude = 1e4 ** -torch.rand(spatial, channels // 2)
             direction = torch.nn.functional.normalize(torch.randn(spatial, channels // 2), dim=0)
 
             self.theta = nn.Parameter(amplitude * direction)
@@ -77,33 +87,112 @@ class DiTBlock(nn.Module):
             nn.Linear(4 * channels, channels),
         )
 
-    def forward(
-        self,
-        x: Tensor,
-        mod: Tensor,
-        indices: Optional[Tensor] = None,
-        mask: Optional[Tensor] = None,
+    def shift(self, x: Tensor) -> Tensor:
+        if self.shifted:
+            return torch.roll(
+                x,
+                shifts=[0 if w is None else w // 2 for w in self.window_size],
+                dims=list(range(-self.spatial - 1, -1)),
+            )
+        else:
+            return x
+
+    def unshift(self, x: Tensor) -> Tensor:
+        if self.shifted:
+            return torch.roll(
+                x,
+                shifts=[0 if w is None else -(w // 2) for w in self.window_size],
+                dims=list(range(-self.spatial - 1, -1)),
+            )
+        else:
+            return x
+
+    def group(self, x: Tensor, shape: Sequence[int]) -> Tensor:
+        window_size = [s if w is None else w for s, w in zip(shape, self.window_size, strict=True)]
+
+        if self.spatial == 1:
+            (l,) = window_size
+            return rearrange(x, "... (L l) C -> ... L (l) C", l=l)
+        elif self.spatial == 2:
+            h, w = window_size
+            return rearrange(x, "... (H h) (W w) C -> ... H W (h w) C", h=h, w=w)
+        elif self.spatial == 3:
+            l, h, w = window_size
+            return rearrange(x, "... (L l) (H h) (W w) C -> ... L H W (l h w) C", l=l, h=h, w=w)
+        else:
+            raise NotImplementedError()
+
+    def ungroup(self, x: Tensor, shape: Sequence[int]) -> Tensor:
+        window_size = [s if w is None else w for s, w in zip(shape, self.window_size, strict=True)]
+
+        if self.spatial == 1:
+            (l,) = window_size
+            return rearrange(x, "... L (l) C -> ... (L l) C", l=l)
+        elif self.spatial == 2:
+            h, w = window_size
+            return rearrange(x, "... H W (h w) C -> ... (H h) (W w) C", h=h, w=w)
+        elif self.spatial == 3:
+            l, h, w = window_size
+            return rearrange(x, "... L H W (l h w) C -> ... (L l) (H h) (W w) C", l=l, h=h, w=w)
+        else:
+            raise NotImplementedError()
+
+    @staticmethod
+    @functools.cache
+    def indices(
+        shape: Sequence[int],
+        spatial: int,
+        window_size: Sequence[int],
+        dtype: torch.dtype,
+        device: torch.device,
     ) -> Tensor:
+        r"""Returns the token indices for a given input shape and window size."""
+
+        assert isinstance(shape, Hashable)
+        assert isinstance(window_size, Hashable)
+
+        indices = [
+            torch.arange(s if w is None else w, dtype=dtype, device=device)
+            for s, w in zip(shape, window_size, strict=True)
+        ]
+        indices = torch.cartesian_prod(*indices)
+        indices = torch.reshape(indices, shape=(-1, spatial))
+
+        return indices
+
+    def forward(self, x: Tensor, mod: Tensor) -> Tensor:
         r"""
         Arguments:
-            x: The input tokens :math:`x`, with shape :math:`(*, L, C)`.
+            x: The input tokens :math:`x`, with shape :math:`(*, H_1, ..., H_N, C)`.
             mod: The modulation vector, with shape :math:`(D)` or :math:`(*, D)`.
-            indices: The postition indices, with shape :math:`(*, L, N)`.
-            mask: The attention mask, with shape :math:`(*, L, L)`.
 
         Returns:
-            The ouput tokens :math:`y`, with shape :math:`(*, L, C)`.
+            The ouput tokens :math:`y`, with shape :math:`(*, H_1, ..., H_N, C)`.
         """
 
-        if indices is None or self.theta is None:
+        shape = x.shape[-self.spatial - 1 : -1]
+
+        if self.theta is None:
             theta = None
         else:
+            indices = self.indices(
+                shape,
+                spatial=self.spatial,
+                window_size=tuple(self.window_size),
+                dtype=x.dtype,
+                device=x.device,
+            )
+
             theta = torch.einsum("...ij,jk", indices, self.theta)
 
         a1, b1, c1, a2, b2, c2 = self.ada_zero(mod)
 
         y = (a1 + 1) * self.norm(x) + b1
-        y = self.msa(y, theta, mask)
+        y = self.shift(y)
+        y = self.group(y, shape)
+        y = self.msa(y, theta)
+        y = self.ungroup(y, shape)
+        y = self.unshift(y)
         y = (x + c1 * y) * torch.rsqrt(1 + c1 * c1)
 
         y = (a2 + 1) * self.norm(y) + b2
@@ -113,8 +202,8 @@ class DiTBlock(nn.Module):
         return y
 
 
-class DiT(nn.Module):
-    r"""Creates a modulated DiT-like module.
+class Swin(nn.Module):
+    r"""Creates a modulated non-hierarchical Swin-like module.
 
     Arguments:
         in_channels: The number of input channels :math:`C_i`.
@@ -128,8 +217,7 @@ class DiT(nn.Module):
         patch_size: The path size.
         window_size: The local attention window size.
         rope: Whether to use rotary positional embedding (RoPE) or not.
-        registers: The number of registers.
-        kwargs: Keyword arguments passed to :class:`DiTBlock`.
+        kwargs: Keyword arguments passed to :class:`SwinBlock`.
     """
 
     def __init__(
@@ -143,9 +231,8 @@ class DiT(nn.Module):
         dropout: Optional[float] = None,
         spatial: int = 2,
         patch_size: Union[int, Sequence[int]] = 4,
-        window_size: Optional[Sequence[int]] = None,
+        window_size: Sequence[int] = (4, 4),
         rope: bool = True,
-        registers: int = 0,
         **kwargs,
     ):
         super().__init__()
@@ -186,57 +273,37 @@ class DiT(nn.Module):
         )
 
         self.blocks = nn.ModuleList([
-            DiTBlock(
+            SwinBlock(
                 channels=hid_channels,
                 mod_features=mod_features,
                 spatial=spatial,
+                window_size=window_size,
+                shifted=i % 2 == 0,
                 **kwargs,
             )
-            for _ in range(hid_blocks)
+            for i in range(hid_blocks)
         ])
 
         self.spatial = spatial
         self.window_size = window_size
 
-        self.registers = nn.Parameter(torch.randn(registers, hid_channels))
-
     @staticmethod
     @functools.cache
-    def indices_and_mask(
+    def indices(
         shape: Sequence[int],
         spatial: int,
-        window_size: Sequence[int],
-        registers: int,
         dtype: torch.dtype,
         device: torch.device,
-    ) -> Tuple[Tensor, Tensor]:
-        r"""Returns the token indices and attention mask for a given input shape and window size."""
+    ) -> Tensor:
+        r"""Returns the token indices for a given input shape."""
 
         assert isinstance(shape, Hashable)
-        assert isinstance(window_size, Hashable)
 
-        indices = (torch.arange(size, device=device) for size in shape)
+        indices = [torch.arange(size, dtype=dtype, device=device) for size in shape]
         indices = torch.cartesian_prod(*indices)
-        indices = torch.reshape(indices, shape=(-1, spatial))
+        indices = torch.reshape(indices, shape=(*shape, spatial))
 
-        if window_size is None:
-            mask = None
-        else:
-            delta = torch.abs(indices[:, None] - indices[None, :])
-            delta = torch.minimum(delta, delta.new_tensor(shape) - delta)
-
-            mask = torch.all(delta <= indices.new_tensor(window_size) // 2, dim=-1)
-            mask = torch.nn.functional.pad(mask, (0, registers, 0, registers), value=True)
-
-            if xfa._has_cpp_library:
-                mask = xfa.SparseCS(mask, device=mask.device)._mat
-
-        register_indices = torch.arange(-registers, 0, device=device)
-        register_indices = repeat(register_indices, "R -> R n", n=spatial)
-
-        indices = torch.cat((indices, register_indices), dim=-2)
-
-        return indices.to(dtype=dtype), mask
+        return indices / indices.new_tensor(shape)
 
     def forward(self, x: Tensor, mod: Tensor) -> Tensor:
         r"""
@@ -252,24 +319,17 @@ class DiT(nn.Module):
         x = self.in_proj(x)
 
         shape = x.shape[-self.spatial - 1 : -1]
-        indices, mask = self.indices_and_mask(
+        indices = self.indices(
             shape,
             spatial=self.spatial,
-            window_size=None if self.window_size is None else tuple(self.window_size),
-            registers=len(self.registers),
             dtype=x.dtype,
             device=x.device,
         )
 
-        x = torch.flatten(x, -self.spatial - 1, -2)
-        x = torch.cat((x, self.registers.expand(x.shape[0], -1, -1)), dim=-2)
-        x = x + self.positional_embedding(indices / indices.new_tensor(shape))
+        x = x + self.positional_embedding(indices)
 
         for block in self.blocks:
-            x = block(x, mod, indices=indices, mask=mask)
-
-        x = torch.narrow(x, start=0, length=math.prod(shape), dim=-2)
-        x = torch.unflatten(x, sizes=shape, dim=-2)
+            x = block(x, mod)
 
         x = self.out_proj(x)
         x = self.unpatch(x)

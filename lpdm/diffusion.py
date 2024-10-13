@@ -19,6 +19,7 @@ from typing import Dict, Optional, Sequence, Union
 
 from .nn.dit import DiT
 from .nn.embedding import SineEncoding
+from .nn.swin import Swin
 from .nn.unet import UNet
 
 
@@ -122,7 +123,7 @@ def get_denoiser(
     dropout: float = 0.1,
     # Denoiser
     improved: bool = True,
-    # DiT
+    # DiT & Swin
     qk_norm: bool = True,
     patch_size: Union[int, Sequence[int]] = 4,
     window_size: Optional[Sequence[int]] = None,
@@ -155,6 +156,21 @@ def get_denoiser(
             window_size=window_size,
             rope=rope,
             registers=registers,
+        )
+    elif arch == "swin":
+        backbone = Swin(
+            in_channels=channels,
+            out_channels=2 * channels if improved else channels,
+            mod_features=emb_features,
+            hid_channels=hid_channels,
+            hid_blocks=hid_blocks,
+            attention_heads=attention_heads,
+            qk_norm=qk_norm,
+            dropout=dropout,
+            spatial=len(shape) - 1,
+            patch_size=patch_size,
+            window_size=window_size,
+            rope=rope,
         )
     elif arch == "unet":
         backbone = UNet(

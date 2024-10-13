@@ -52,7 +52,7 @@ class UNetBlock(nn.Module):
             nn.Linear(mod_features, mod_features),
             nn.SiLU(),
             nn.Linear(mod_features, 3 * channels),
-            Rearrange("... (r C) -> r ... C" + " 1" * spatial, r=3),
+            Rearrange("... (n C) -> n ... C" + " 1" * spatial, n=3),
         )
 
         layer = self.ada_zero[-2]
@@ -176,8 +176,8 @@ class UNet(nn.Module):
                         ConvNd(
                             hid_channels[i - 1],
                             hid_channels[i],
-                            spatial=spatial,
                             stride=stride,
+                            spatial=spatial,
                             **kwargs,
                         ),
                         LayerNorm(dim=1),

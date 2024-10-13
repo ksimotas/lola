@@ -12,9 +12,10 @@ from lpdm.nn.dit import DiT
 @pytest.mark.parametrize("in_channels, out_channels", [(3, 5)])
 @pytest.mark.parametrize("mod_features", [16])
 @pytest.mark.parametrize("attention_heads", [1, 4])
+@pytest.mark.parametrize("dropout", [None, 0.1])
 @pytest.mark.parametrize("spatial", [1, 2])
 @pytest.mark.parametrize("patch_size", [2, 4])
-@pytest.mark.parametrize("window_size", [None, 1])
+@pytest.mark.parametrize("window_size", [None, 3])
 @pytest.mark.parametrize("registers", [0, 3])
 @pytest.mark.parametrize("batch_size", [4])
 def test_DiT(
@@ -24,6 +25,7 @@ def test_DiT(
     out_channels: int,
     mod_features: int,
     attention_heads: int,
+    dropout: float,
     spatial: int,
     patch_size: int,
     window_size: int,
@@ -37,20 +39,20 @@ def test_DiT(
         hid_channels=64,
         hid_blocks=3,
         attention_heads=attention_heads,
-        dropout=0.1,
+        dropout=dropout,
         spatial=spatial,
         patch_size=patch_size,
         window_size=None if window_size is None else (window_size,) * spatial,
         registers=registers,
     )
 
-    dit = make()
-    dit.train()
+    net = make()
+    net.train()
 
     # Call
     x = torch.randn((batch_size, in_channels) + (length,) * spatial)
     mod = torch.randn(batch_size, mod_features)
-    y = dit(x, mod)
+    y = net(x, mod)
 
     assert y.ndim == x.ndim
     assert y.shape[0] == batch_size
@@ -63,21 +65,21 @@ def test_DiT(
     loss = y.square().sum()
     loss.backward()
 
-    for p in dit.parameters():
+    for p in net.parameters():
         assert p.grad is not None
         assert torch.all(torch.isfinite(p.grad))
 
     # Save
-    torch.save(dit.state_dict(), tmp_path / "state.pth")
+    torch.save(net.state_dict(), tmp_path / "state.pth")
 
     # Load
     copy = make()
     copy.load_state_dict(torch.load(tmp_path / "state.pth", weights_only=True))
 
-    dit.eval()
+    net.eval()
     copy.eval()
 
-    y_dit = dit(x, mod)
+    y_net = net(x, mod)
     y_copy = copy(x, mod)
 
-    assert torch.allclose(y_dit, y_copy)
+    assert torch.allclose(y_net, y_copy)

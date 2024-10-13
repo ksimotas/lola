@@ -32,7 +32,7 @@ class MultiheadSelfAttention(nn.Module):
         self,
         channels: int,
         attention_heads: int = 1,
-        dropout: float = 0.0,
+        dropout: Optional[float] = None,
         qk_norm: bool = True,
         checkpointing: bool = True,
     ):
@@ -49,7 +49,7 @@ class MultiheadSelfAttention(nn.Module):
             self.qk_norm = nn.Identity()
 
         self.heads = attention_heads
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(0.0 if dropout is None else dropout)
         self.checkpointing = checkpointing
 
     def _forward(
