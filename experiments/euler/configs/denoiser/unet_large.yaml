@@ -1,0 +1,9 @@
+name: "unet_large_${denoiser.improved}"
+arch: "unet"
+improved: true
+emb_features: 256
+hid_channels: [256, 512, 768, 1024]
+hid_blocks: [3, 3, 3, 3]
+stride: [1, 2, 2]
+attention_heads: {2: 6, 3: 8}
+dropout: 0.01

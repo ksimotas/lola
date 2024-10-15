@@ -5,5 +5,5 @@ emb_features: 256
 hid_channels: [128, 256, 384, 512]
 hid_blocks: [3, 3, 3, 3]
 stride: [1, 2, 2]
-attention_heads: {2: 4}
+attention_heads: {2: 3, 3: 4}
 dropout: 0.01
