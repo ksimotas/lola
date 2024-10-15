@@ -288,7 +288,7 @@ if __name__ == "__main__":
     # Parser
     parser = argparse.ArgumentParser()
     parser.add_argument("overrides", nargs="*", type=str)
-    parser.add_argument("--cpus", type=int, default=32)
+    parser.add_argument("--cpus-per-gpu", type=int, default=8)
     parser.add_argument("--gpus", type=int, default=4)
     parser.add_argument("--gpuxl", action="store_true", default=False)
     parser.add_argument("--ram", type=str, default="256GB")
@@ -309,7 +309,7 @@ if __name__ == "__main__":
         dawgz.job(
             f=partial(train, runid, cfg),
             name="train",
-            cpus=args.cpus,
+            cpus=args.cpus_per_gpu * args.gpus,
             gpus=args.gpus,
             ram=args.ram,
             time=args.time,
