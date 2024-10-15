@@ -277,7 +277,7 @@ if __name__ == "__main__":
             f=partial(train, runid, cfg, datasets),
             name="train",
             cpus=args.cpus,
-            gpus=args.gpu,
+            gpus=args.gpus,
             ram=args.ram,
             time=args.time,
             partition="gpuxl" if args.gpuxl else "gpu",
