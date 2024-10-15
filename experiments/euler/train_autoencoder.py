@@ -186,6 +186,7 @@ def train(
             logs["train/loss/std"] = losses.std()
             logs["train/grad_norm/mean"] = grads.mean()
             logs["train/grad_norm/std"] = grads.std()
+            logs["train/learning_rate"] = optimizer.param_groups[0]["lr"]
 
         del losses, losses_list, grads, grads_list
 
@@ -218,6 +219,11 @@ def train(
 
             logs["valid/loss/mean"] = losses.mean()
             logs["valid/loss/std"] = losses.std()
+
+            epochs.set_postfix(
+                lt=logs["train/loss/mean"],
+                lv=logs["valid/loss/mean"],
+            )
 
             run.log(logs)
 
