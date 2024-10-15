@@ -11,6 +11,7 @@ __all__ = [
 ]
 
 import functools
+import itertools
 import math
 import torch
 import torch.nn as nn
@@ -238,11 +239,12 @@ class DiT(nn.Module):
 
         return indices.to(dtype=dtype), mask
 
-    def forward(self, x: Tensor, mod: Tensor) -> Tensor:
+    def forward(self, x: Tensor, mod: Tensor, early_out: Optional[int] = None) -> Tensor:
         r"""
         Arguments:
             x: The input tensor, with shape :math:`(B, C_i, H_1, ..., H_N)`.
             mod: The modulation vector, with shape :math:`(D)` or :math:`(B, D)`.
+            early_out: The number of blocks after which the output is returned.
 
         Returns:
             The output tensor, with shape :math:`(B, C_o, H_1, ..., H_N)`.
@@ -265,7 +267,7 @@ class DiT(nn.Module):
         x = torch.cat((x, self.registers.expand(x.shape[0], -1, -1)), dim=-2)
         x = x + self.positional_embedding(indices / indices.new_tensor(shape))
 
-        for block in self.blocks:
+        for block in itertools.islice(self.blocks, early_out):
             x = block(x, mod, indices=indices, mask=mask)
 
         x = torch.narrow(x, start=0, length=math.prod(shape), dim=-2)
