@@ -135,6 +135,7 @@ def train(
 
     # Training loop
     steps = cfg.train.epoch_size // cfg.train.batch_size // world_size
+    steps = steps + (-steps) % cfg.train.accumulation
 
     if rank == 0:
         epochs = trange(cfg.train.epochs, ncols=88, ascii=True)
@@ -150,19 +151,24 @@ def train(
 
         losses, grads = [], []
 
-        for batch in islice(train_loader, steps):
+        for step, batch in islice(enumerate(train_loader), steps):
             x = batch["input_fields"]
             x = x.to(device, non_blocking=True)
             x = preprocess(x)
             x = rearrange(x, "B 1 H W C -> B C H W")
 
-            loss, y = model_loss(x)
-            loss.backward()
+            if (step + 1) % cfg.train.accumulation == 0:
+                loss, y = model_loss(x)
+                loss.backward()
 
-            grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
+                grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
+                grads.append(grad_norm)
+            else:
+                with model_loss.no_sync():
+                    loss, y = model_loss(x)
+                    loss.backward()
 
             losses.append(loss.detach())
-            grads.append(grad_norm)
 
         losses = torch.stack(losses)
         grads = torch.stack(grads)
@@ -254,7 +260,7 @@ if __name__ == "__main__":
     parser.add_argument("--gpus", type=int, default=4)
     parser.add_argument("--gpuxl", action="store_true", default=False)
     parser.add_argument("--ram", type=str, default="256GB")
-    parser.add_argument("--time", type=str, default="2-00:00:00")
+    parser.add_argument("--time", type=str, default="7-00:00:00")
 
     args = parser.parse_args()
 

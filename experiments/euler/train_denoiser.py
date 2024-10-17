@@ -156,6 +156,7 @@ def train(runid: str, cfg: DictConfig):
 
     # Training loop
     steps = cfg.train.epoch_size // cfg.train.batch_size // world_size
+    steps = steps + (-steps) % cfg.train.accumulation
 
     if rank == 0:
         epochs = trange(cfg.train.epochs, ncols=88, ascii=True)
@@ -173,7 +174,7 @@ def train(runid: str, cfg: DictConfig):
 
         losses, grads = [], []
 
-        for batch in islice(train_loader, steps):
+        for step, batch in islice(enumerate(train_loader), steps):
             z = batch["state"]
             z = z.to(device, non_blocking=True)
             z = rearrange(z, "B L C H W -> B C L H W")
@@ -181,15 +182,20 @@ def train(runid: str, cfg: DictConfig):
             label = batch["label"]
             label = label.to(device, non_blocking=True)
 
-            loss = model_loss(z, label=label)
-            loss.backward()
+            if (step + 1) % cfg.train.accumulation == 0:
+                loss = model_loss(z, label=label)
+                loss.backward()
 
-            grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
+                grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
+                grads.append(grad_norm)
 
-            average.update_parameters(model_loss.module.denoiser)
+                average.update_parameters(model_loss.module.denoiser)
+            else:
+                with model_loss.no_sync():
+                    loss = model_loss(z, label=label)
+                    loss.backward()
 
             losses.append(loss.detach())
-            grads.append(grad_norm)
 
         losses = torch.stack(losses)
         grads = torch.stack(grads)
