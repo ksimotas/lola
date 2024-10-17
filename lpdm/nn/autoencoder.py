@@ -433,14 +433,10 @@ class AutoEncoderLoss(nn.Module):
 
     def __init__(
         self,
-        autoencoder: AutoEncoder,
         losses: Sequence[str] = ["mse"],  # noqa: B006
         weights: Sequence[float] = [1.0],  # noqa: B006
-        name: str = None,  # ignored
     ):
         super().__init__()
-
-        self.autoencoder = autoencoder
 
         assert len(losses) == len(weights)
 
@@ -452,8 +448,8 @@ class AutoEncoderLoss(nn.Module):
         self.losses = [LOSSES[key] for key in losses]
         self.register_buffer("weights", torch.as_tensor(weights))
 
-    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor]:
-        y = self.autoencoder(x)
+    def forward(self, autoencoder: nn.Module, x: Tensor) -> Tuple[Tensor, Tensor]:
+        y = autoencoder(x)
 
         values = torch.stack([loss(x, y) for loss in self.losses])
 

@@ -105,21 +105,18 @@ def train(
         **cfg.ae,
     )
 
+    criterion = AutoEncoderLoss(**cfg.ae.loss).to(device)
+
     if cfg.boot_state:
         autoencoder.load_state_dict(torch.load(cfg.boot_state))
 
-    model_loss = AutoEncoderLoss(
-        autoencoder=autoencoder,
-        **cfg.ae.loss,
-    )
-
-    model_loss = DistributedDataParallel(
-        module=model_loss.to(device),
+    autoencoder = DistributedDataParallel(
+        module=autoencoder.to(device),
         device_ids=[device],
     )
 
     optimizer, scheduler = get_optimizer(
-        params=model_loss.parameters(),
+        params=autoencoder.parameters(),
         epochs=cfg.train.epochs,
         **cfg.optim,
     )
@@ -147,7 +144,7 @@ def train(
         valid_sampler.set_epoch(epoch)
 
         ## Train
-        model_loss.train()
+        autoencoder.train()
 
         losses, grads = [], []
 
@@ -158,14 +155,14 @@ def train(
             x = rearrange(x, "B 1 H W C -> B C H W")
 
             if (step + 1) % cfg.train.accumulation == 0:
-                loss, y = model_loss(x)
+                loss, y = criterion(autoencoder, x)
                 loss.backward()
 
                 grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
                 grads.append(grad_norm)
             else:
-                with model_loss.no_sync():
-                    loss, y = model_loss(x)
+                with autoencoder.no_sync():
+                    loss, y = criterion(autoencoder, x)
                     loss.backward()
 
             losses.append(loss.detach())
@@ -197,7 +194,7 @@ def train(
         del losses, losses_list, grads, grads_list
 
         ## Eval
-        model_loss.eval()
+        autoencoder.eval()
 
         losses = []
 
@@ -208,7 +205,7 @@ def train(
                 x = preprocess(x)
                 x = rearrange(x, "B 1 H W C -> B C H W")
 
-                loss, y = model_loss(x)
+                loss, y = criterion(autoencoder, x)
                 losses.append(loss)
 
         losses = torch.stack(losses)
@@ -240,7 +237,7 @@ def train(
 
         ## Checkpoint
         if rank == 0:
-            state = model_loss.module.autoencoder.state_dict()
+            state = autoencoder.module.state_dict()
             torch.save(state, runpath / "state.pth")
 
         dist.barrier()

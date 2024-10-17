@@ -1,6 +1,6 @@
 name: "unet_large_${denoiser.improved}"
 arch: "unet"
-improved: true
+improved: false
 emb_features: 256
 hid_channels: [256, 512, 768, 1024]
 hid_blocks: [3, 3, 3, 3]

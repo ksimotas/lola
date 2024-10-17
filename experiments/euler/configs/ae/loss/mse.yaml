@@ -1,3 +1,2 @@
-name: "mse"
 losses: ["mse"]
 weights: [1.0]

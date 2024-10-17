@@ -1,11 +1,13 @@
 defaults:
   - dataset: euler_open
   - denoiser: dit_medium
+  - denoiser/loss: beta
+  - denoiser/schedule: log_logit
   - optim: adamw
 
 trajectory:
-  length: 2
-  stride: 16
+  length: 3
+  stride: 1
 
 train:
   epochs: 1024

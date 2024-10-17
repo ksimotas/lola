@@ -13,9 +13,11 @@ import torch.nn as nn
 from azula.denoise import Gaussian, GaussianDenoiser, PreconditionedDenoiser
 from azula.nn.utils import FlattenWrapper
 from azula.noise import Schedule, VESchedule
+from omegaconf import DictConfig
 from torch import Tensor
-from torch.distributions import Beta
-from typing import Dict, Optional, Sequence, Union
+from torch.distributions import Beta, Distribution, Kumaraswamy
+from torch.nn.parallel import DistributedDataParallel
+from typing import Dict, Optional, Sequence, Tuple, Union
 
 from .nn.dit import DiT
 from .nn.embedding import SineEncoding
@@ -45,6 +47,63 @@ class EmbeddingWrapper(nn.Module):
             emb = self.time_embedding(t) + self.label_embedding(label)
 
         return self.backbone(x_t, emb, **kwargs)
+
+
+class LogLinearSchedule(Schedule):
+    r"""Creates a log-linear noise schedule.
+
+    .. math::
+        \alpha_t & = 1 \\
+        \sigma_t & = \exp \big( (1 - t) \log \sigma_\min + t \log \sigma_\max \big)
+
+    Arguments:
+        sigma_min: The initial noise scale :math:`\sigma_\min \in \mathbb{R}_+`.
+        sigma_max: The final noise scale :math:`\sigma_\max \in \mathbb{R}_+`.
+    """
+
+    def __init__(self, sigma_min: float = 1e-3, sigma_max: float = 1e2):
+        super().__init__()
+
+        self.log_sigma_min = math.log(sigma_min)
+        self.log_sigma_max = math.log(sigma_max)
+
+    def alpha(self, t: Tensor) -> Tensor:
+        return torch.ones_like(t)
+
+    def sigma(self, t: Tensor) -> Tensor:
+        return torch.exp(self.log_sigma_min * (1 - t) + self.log_sigma_max * t)
+
+    def forward(self, t: Tensor) -> Tuple[Tensor, Tensor]:
+        return self.alpha(t).unsqueeze(-1), self.sigma(t).unsqueeze(-1)
+
+
+class LogLogitSchedule(Schedule):
+    r"""Creates a log-logit noise schedule.
+
+    .. math::
+        \alpha_t & = 1 \\
+        \sigma_t & = \exp \log \frac{t}{1 - t} = \frac{t}{1 - t}
+
+    See also:
+        :func:`torch.special.logit`
+
+    Arguments:
+        sigma_min: The initial noise scale :math:`\sigma_\min \in \mathbb{R}_+`.
+    """
+
+    def __init__(self, sigma_min: float = 1e-6):
+        super().__init__()
+
+        self.eps = sigma_min / (sigma_min + 1)
+
+    def alpha(self, t: Tensor) -> Tensor:
+        return torch.ones_like(t)
+
+    def sigma(self, t: Tensor) -> Tensor:
+        return torch.exp(torch.special.logit(t, eps=self.eps))
+
+    def forward(self, t: Tensor) -> Tuple[Tensor, Tensor]:
+        return self.alpha(t).unsqueeze(-1), self.sigma(t).unsqueeze(-1)
 
 
 class ImprovedPreconditionedDenoiser(GaussianDenoiser):
@@ -81,15 +140,26 @@ class ImprovedPreconditionedDenoiser(GaussianDenoiser):
 class DenoiserLoss(nn.Module):
     r"""Creates a loss module for a Gaussian denoiser."""
 
-    def __init__(self, denoiser: GaussianDenoiser, a: float = 1.0, b: float = 1.0):
+    def __init__(self, distribution: str = "beta", a: float = 1.0, b: float = 1.0):
         super().__init__()
 
-        self.denoiser = denoiser
+        self.distribution = distribution
 
         self.register_buffer("a", torch.as_tensor(a))
         self.register_buffer("b", torch.as_tensor(b))
 
-    def forward(self, x: Tensor, **kwargs) -> Tensor:
+    @property
+    def prior(self) -> Distribution:
+        r"""Returns the time prior :math:`p(t)`."""
+
+        if self.distribution == "beta":
+            return Beta(self.a, self.b)
+        elif self.distribution == "kumaraswamy":
+            return Kumaraswamy(self.a, self.b)
+        else:
+            raise ValueError(f"unknown distribution {self.distribution}")
+
+    def forward(self, denoiser: GaussianDenoiser, x: Tensor, **kwargs) -> Tensor:
         r"""
         Arguments:
             x: A clean vector :math:`x`, with shape :math:`(B, ...)`.
@@ -105,12 +175,20 @@ class DenoiserLoss(nn.Module):
 
         B, *shape = x.shape
 
+        t = self.prior.sample((B,))
+
+        if isinstance(denoiser, DistributedDataParallel):
+            alpha_t, sigma_t = denoiser.module.schedule(t)
+        else:
+            alpha_t, sigma_t = denoiser.schedule(t)
+
         x = torch.reshape(x, (B, -1))
-        t = Beta(self.a, self.b).sample((B,))
+        z = torch.randn_like(x)
+        x_t = alpha_t * x + sigma_t * z
 
-        nll = self.denoiser.loss(x, t, shape=shape, **kwargs)
+        q = denoiser(x_t, t, shape=shape, **kwargs)
 
-        return nll.mean() / math.prod(shape)
+        return -q.log_prob(x).mean() / math.prod(shape)
 
 
 def get_denoiser(
@@ -123,6 +201,7 @@ def get_denoiser(
     dropout: float = 0.1,
     # Denoiser
     improved: bool = True,
+    schedule: DictConfig = None,
     # DiT & Swin
     qk_norm: bool = True,
     patch_size: Union[int, Sequence[int]] = 4,
@@ -136,6 +215,7 @@ def get_denoiser(
     label_features: int = 0,
     # Ignore
     name: str = None,
+    loss: DictConfig = None,
 ) -> GaussianDenoiser:
     r"""Instantiates a denoiser."""
 
@@ -208,7 +288,12 @@ def get_denoiser(
         shape=shape,
     )
 
-    schedule = VESchedule(sigma_min=1e-3, sigma_max=1e3)
+    if schedule is None:
+        schedule = VESchedule(sigma_min=1e-3, sigma_max=1e3)
+    elif schedule.name == "log_linear":
+        schedule = LogLinearSchedule(sigma_min=schedule.sigma_min, sigma_max=schedule.sigma_max)
+    elif schedule.name == "log_logit":
+        schedule = LogLogitSchedule(sigma_min=schedule.sigma_min)
 
     if improved:
         denoiser = ImprovedPreconditionedDenoiser(backbone, schedule)

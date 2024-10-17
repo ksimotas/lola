@@ -125,23 +125,24 @@ def train(runid: str, cfg: DictConfig):
         **cfg.denoiser,
     )
 
+    criterion = DenoiserLoss(**cfg.denoiser.loss).to(device)
+
     if cfg.boot_state:
         denoiser.load_state_dict(torch.load(cfg.boot_state))
 
-    model_loss = DenoiserLoss(denoiser=denoiser, a=3.0, b=3.0)
-    model_loss = DistributedDataParallel(
-        module=model_loss.to(device),
+    denoiser = DistributedDataParallel(
+        module=denoiser.to(device),
         device_ids=[device],
     )
 
     optimizer, scheduler = get_optimizer(
-        params=model_loss.parameters(),
+        params=denoiser.parameters(),
         epochs=cfg.train.epochs,
         **cfg.optim,
     )
 
     average = ExponentialMovingAverage(
-        module=model_loss.module.denoiser,
+        module=denoiser.module,
         decay=cfg.train.ema_decay,
     )
 
@@ -170,7 +171,7 @@ def train(runid: str, cfg: DictConfig):
         valid_sampler.set_epoch(epoch)
 
         ## Train
-        model_loss.train()
+        denoiser.train()
 
         losses, grads = [], []
 
@@ -183,16 +184,16 @@ def train(runid: str, cfg: DictConfig):
             label = label.to(device, non_blocking=True)
 
             if (step + 1) % cfg.train.accumulation == 0:
-                loss = model_loss(z, label=label)
+                loss = criterion(denoiser, z, label=label)
                 loss.backward()
 
                 grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
                 grads.append(grad_norm)
 
-                average.update_parameters(model_loss.module.denoiser)
+                average.update_parameters(denoiser.module)
             else:
-                with model_loss.no_sync():
-                    loss = model_loss(z, label=label)
+                with denoiser.no_sync():
+                    loss = criterion(denoiser, z, label=label)
                     loss.backward()
 
             losses.append(loss.detach())
@@ -224,7 +225,7 @@ def train(runid: str, cfg: DictConfig):
         del losses, losses_list, grads, grads_list
 
         ## Eval
-        model_loss.eval()
+        denoiser.eval()
 
         losses = []
 
@@ -237,7 +238,7 @@ def train(runid: str, cfg: DictConfig):
                 label = batch["label"]
                 label = label.to(device, non_blocking=True)
 
-                loss = model_loss(z, label=label)
+                loss = criterion(denoiser, z, label=label)
                 losses.append(loss)
 
         losses = torch.stack(losses)
@@ -269,7 +270,7 @@ def train(runid: str, cfg: DictConfig):
 
         ## Checkpoint
         if rank == 0:
-            state = model_loss.module.denoiser.state_dict()
+            state = denoiser.module.state_dict()
             state_ema = average.module.state_dict()
 
             torch.save(state, runpath / "state.pth")
