@@ -142,7 +142,7 @@ def train(runid: str, cfg: DictConfig):
 
     average = ExponentialMovingAverage(
         module=model_loss.module.denoiser,
-        decay=cfg.optim.ema_decay,
+        decay=cfg.train.ema_decay,
     )
 
     # W&B

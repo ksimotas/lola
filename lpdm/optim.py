@@ -55,7 +55,6 @@ def get_optimizer(
     # Ignored
     name: str = None,
     grad_clip: float = None,
-    ema_decay: float = None,
 ) -> Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LRScheduler]:
     r"""Instantiates an optimizer and sheduler.
 
@@ -76,6 +75,24 @@ def get_optimizer(
             params=params,
             lr=learning_rate,
             weight_decay=weight_decay,
+        )
+    elif optimizer == "shampoo":
+        from distributed_shampoo.distributed_shampoo import DistributedShampoo
+        from distributed_shampoo.shampoo_types import AdamGraftingConfig
+
+        optimizer = DistributedShampoo(
+            params,
+            lr=learning_rate,
+            betas=(0.9, 0.999),
+            epsilon=1e-12,
+            weight_decay=weight_decay,
+            max_preconditioner_dim=1024,
+            precondition_frequency=100,
+            use_decoupled_weight_decay=True,
+            grafting_config=AdamGraftingConfig(
+                beta2=0.999,
+                epsilon=1e-08,
+            ),
         )
     else:
         raise NotImplementedError()

@@ -2,7 +2,7 @@ defaults:
   - ae: 64x64_medium
   - ae/loss: mae
   - dataset: euler_open
-  - optim: adamw_cosine
+  - optim: adamw
 
 train:
   epochs: 256

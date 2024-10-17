@@ -1,7 +1,7 @@
 defaults:
   - dataset: euler_open
   - denoiser: dit_medium
-  - optim: adamw_cosine
+  - optim: adamw
 
 trajectory:
   length: 2
@@ -11,6 +11,7 @@ train:
   epochs: 1024
   epoch_size: 16384
   batch_size: 32
+  ema_decay: 0.999
 
 ae_path: ???
 boot_state: null
