@@ -188,7 +188,14 @@ class DenoiserLoss(nn.Module):
 
         q = denoiser(x_t, t, shape=shape, **kwargs)
 
-        return -q.log_prob(x).mean() / math.prod(shape)
+        l_mean = ((q.mean - x).square() / q.var.detach()).mean()
+
+        if q.var.requires_grad:
+            l_var = ((q.mean.detach() - x).square() - q.var).square().mean()
+        else:
+            l_var = torch.zeros_like(l_mean)
+
+        return l_mean + l_var
 
 
 def get_denoiser(
