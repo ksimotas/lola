@@ -6,6 +6,8 @@ __all__ = [
     "RMSNorm",
     "SelfAttentionNd",
     "SpectralConvNd",
+    "Patchify",
+    "Unpatchify",
     "ViewAsComplex",
     "ViewAsReal",
 ]
@@ -254,6 +256,46 @@ class SpectralConvNd(nn.Module):
     @property
     def spatial_dims(self) -> Sequence[int]:
         return tuple(range(-self.spatial, 0))
+
+
+class Patchify(nn.Module):
+    def __init__(self, patch_size: Sequence[int]):
+        super().__init__()
+
+        self.patch_size = patch_size
+
+    def forward(self, x: Tensor) -> Tensor:
+        if len(self.patch_size) == 1:
+            (l,) = self.patch_size
+            return rearrange(x, "... C (L l) -> ... (C l) L", l=l)
+        elif len(self.patch_size) == 2:
+            h, w = self.patch_size
+            return rearrange(x, "... C (H h) (W w) -> ... (C h w) H W", h=h, w=w)
+        elif len(self.patch_size) == 3:
+            l, h, w = self.patch_size
+            return rearrange(x, "... C (L l) (H h) (W w) -> ... (C l h w) L H W", l=l, h=h, w=w)
+        else:
+            raise NotImplementedError()
+
+
+class Unpatchify(nn.Module):
+    def __init__(self, patch_size: Sequence[int]):
+        super().__init__()
+
+        self.patch_size = patch_size
+
+    def forward(self, x: Tensor) -> Tensor:
+        if len(self.patch_size) == 1:
+            (l,) = self.patch_size
+            return rearrange(x, "... (C l) L -> ... C (L l)", l=l)
+        elif len(self.patch_size) == 2:
+            h, w = self.patch_size
+            return rearrange(x, "... (C h w) H W -> ... C (H h) (W w)", h=h, w=w)
+        elif len(self.patch_size) == 3:
+            l, h, w = self.patch_size
+            return rearrange(x, "... (C l h w) L H W -> ... C (L l) (H h) (W w)", l=l, h=h, w=w)
+        else:
+            raise NotImplementedError()
 
 
 class ViewAsComplex(nn.Module):

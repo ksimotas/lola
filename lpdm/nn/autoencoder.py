@@ -19,10 +19,10 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 
 from .layers import (
     ConvNd,
+    LayerNorm,
+    Patchify,
     SelfAttentionNd,
-    SpectralConvNd,
-    ViewAsComplex,
-    ViewAsReal,
+    Unpatchify,
 )
 
 
@@ -36,9 +36,9 @@ class ResBlock(nn.Module):
 
     Arguments:
         channels: The number of channels :math:`C`.
+        version: The residual block version.
         groups: The number of groups in :class:`torch.nn.GroupNorm` layers.
         attention_heads: The number of attention heads.
-        spectral_modes: The number of spectral convolution modes.
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions :math:`N`.
         kwargs: Keyword arguments passed to :class:`torch.nn.Conv2d`.
@@ -47,44 +47,55 @@ class ResBlock(nn.Module):
     def __init__(
         self,
         channels: int,
+        version: str = "pre-group-norm",
         groups: int = 16,
         attention_heads: Optional[int] = None,
-        spectral_modes: Optional[int] = None,
         dropout: Optional[float] = None,
         spatial: int = 2,
         **kwargs,
     ):
         super().__init__()
 
-        self.block = nn.Sequential(
-            nn.GroupNorm(num_groups=min(groups, channels), num_channels=channels, affine=False),
+        layers = [
             ConvNd(channels, channels, spatial=spatial, **kwargs),
             nn.SiLU(),
             nn.Identity() if dropout is None else nn.Dropout(dropout),
             ConvNd(channels, channels, spatial=spatial, **kwargs),
-        )
+        ]
+
+        if version == "pre-layer-norm":
+            layers.insert(0, LayerNorm(dim=-spatial - 1))
+        elif version == "post-layer-norm":
+            layers.append(LayerNorm(dim=-spatial - 1))
+        elif version == "pre-group-norm":
+            layers.insert(
+                0,
+                nn.GroupNorm(
+                    num_groups=min(groups, channels),
+                    num_channels=channels,
+                    affine=False,
+                ),
+            )
+        elif version == "post-group-norm":
+            layers.append(
+                nn.GroupNorm(
+                    num_groups=min(groups, channels),
+                    num_channels=channels,
+                    affine=False,
+                )
+            )
+        else:
+            raise ValueError(f"unknown version '{version}'")
 
         if attention_heads is not None:
-            self.block.append(
+            layers.insert(
+                0,
                 Residual(
-                    nn.SiLU(),
                     SelfAttentionNd(channels, heads=attention_heads),
-                )
+                ),
             )
 
-        if spectral_modes is not None:
-            self.block.append(
-                Residual(
-                    ViewAsComplex(dim=1),
-                    SpectralConvNd(
-                        channels // 2,
-                        channels // 2,
-                        modes=spectral_modes,
-                        spatial=spatial,
-                    ),
-                    ViewAsReal(dim=1),
-                )
-            )
+        self.block = nn.Sequential(*layers)
 
         self.register_buffer("output_scale", torch.as_tensor(1 / math.sqrt(2)))
 
@@ -110,8 +121,9 @@ class Encoder(nn.Module):
         hid_blocks: The numbers of hidden blocks at each depth.
         kernel_size: The kernel size of all convolutions.
         stride: The stride of the downsampling convolutions.
+        pixel_shuffle: Whether to use pixel shuffling or not.
+        res_block_version: The residual block version.
         attention_heads: The number of attention heads at each depth.
-        spectral_modes: The number of spectral convolution modes at each depth.
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions.
         periodic: Whether the spatial dimensions are periodic or not.
@@ -126,6 +138,8 @@ class Encoder(nn.Module):
         hid_blocks: Sequence[int] = (3, 3, 3),
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
+        pixel_shuffle: bool = False,
+        res_block_version: str = "pre-group-norm",
         attention_heads: Dict[int, int] = {},  # noqa: B006
         spectral_modes: Dict[int, int] = {},  # noqa: B006
         dropout: Optional[float] = None,
@@ -155,29 +169,44 @@ class Encoder(nn.Module):
             blocks = nn.ModuleList()
 
             if i > 0:
-                blocks.append(
-                    ConvNd(
-                        hid_channels[i - 1],
-                        hid_channels[i],
-                        spatial=spatial,
-                        stride=stride,
-                        **kwargs,
+                if pixel_shuffle:
+                    blocks.append(
+                        nn.Sequential(
+                            Patchify(patch_size=stride),
+                            ConvNd(
+                                hid_channels[i - 1] * math.prod(stride),
+                                hid_channels[i],
+                                spatial=spatial,
+                                **kwargs,
+                            ),
+                        )
                     )
-                )
+                else:
+                    blocks.append(
+                        ConvNd(
+                            hid_channels[i - 1],
+                            hid_channels[i],
+                            spatial=spatial,
+                            stride=stride,
+                            **kwargs,
+                        )
+                    )
             else:
                 blocks.append(ConvNd(in_channels, hid_channels[i], spatial=spatial, **kwargs))
 
             for _ in range(num_blocks):
-                blocks.append(
-                    ResBlock(
-                        hid_channels[i],
-                        attention_heads=attention_heads.get(i, None),
-                        spectral_modes=spectral_modes.get(i, None),
-                        dropout=dropout,
-                        spatial=spatial,
-                        **kwargs,
+                if i in attention_heads:
+                    pass
+                else:
+                    blocks.append(
+                        ResBlock(
+                            hid_channels[i],
+                            version=res_block_version,
+                            dropout=dropout,
+                            spatial=spatial,
+                            **kwargs,
+                        )
                     )
-                )
 
             if i + 1 == len(hid_blocks):
                 blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
@@ -215,8 +244,9 @@ class Decoder(nn.Module):
         hid_blocks: The numbers of hidden blocks at each depth.
         kernel_size: The kernel size of all convolutions.
         stride: The stride of the downsampling convolutions.
+        pixel_shuffle: Whether to use pixel shuffling or not.
+        res_block_version: The residual block version.
         attention_heads: The number of attention heads at each depth.
-        spectral_modes: The number of spectral convolution modes at each depth.
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions.
         periodic: Whether the spatial dimensions are periodic or not.
@@ -231,6 +261,8 @@ class Decoder(nn.Module):
         hid_blocks: Sequence[int] = (3, 3, 3),
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
+        pixel_shuffle: bool = False,
+        res_block_version: str = "pre-group-norm",
         attention_heads: Dict[int, int] = {},  # noqa: B006
         spectral_modes: Dict[int, int] = {},  # noqa: B006
         dropout: Optional[float] = None,
@@ -263,29 +295,44 @@ class Decoder(nn.Module):
                 blocks.append(ConvNd(in_channels, hid_channels[i], spatial=spatial, **kwargs))
 
             for _ in range(num_blocks):
-                blocks.append(
-                    ResBlock(
-                        hid_channels[i],
-                        attention_heads=attention_heads.get(i, None),
-                        spectral_modes=spectral_modes.get(i, None),
-                        dropout=dropout,
-                        spatial=spatial,
-                        **kwargs,
-                    )
-                )
-
-            if i > 0:
-                blocks.append(
-                    nn.Sequential(
-                        nn.Upsample(scale_factor=tuple(stride), mode="nearest"),
-                        ConvNd(
+                if i in attention_heads:
+                    pass
+                else:
+                    blocks.append(
+                        ResBlock(
                             hid_channels[i],
-                            hid_channels[i - 1],
+                            version=res_block_version,
+                            dropout=dropout,
                             spatial=spatial,
                             **kwargs,
-                        ),
+                        )
                     )
-                )
+
+            if i > 0:
+                if pixel_shuffle:
+                    blocks.append(
+                        nn.Sequential(
+                            ConvNd(
+                                hid_channels[i],
+                                hid_channels[i - 1] * math.prod(stride),
+                                spatial=spatial,
+                                **kwargs,
+                            ),
+                            Unpatchify(patch_size=stride),
+                        )
+                    )
+                else:
+                    blocks.append(
+                        nn.Sequential(
+                            nn.Upsample(scale_factor=tuple(stride), mode="nearest"),
+                            ConvNd(
+                                hid_channels[i],
+                                hid_channels[i - 1],
+                                spatial=spatial,
+                                **kwargs,
+                            ),
+                        )
+                    )
             else:
                 blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
 
@@ -320,6 +367,7 @@ class AutoEncoder(nn.Module):
         lat_channels: The number of latent channels :math:`C_o`.
         hid_channels: The numbers of channels at each depth.
         hid_blocks: The numbers of hidden blocks at each depth.
+        saturation: The type of latent saturation.
         kwargs: Keyword arguments passed to :class:`Encoder` and :class:`Decoder`.
     """
 
@@ -329,6 +377,7 @@ class AutoEncoder(nn.Module):
         lat_channels: int,
         hid_channels: Sequence[int] = (64, 128, 256),
         hid_blocks: Sequence[int] = (3, 3, 3),
+        saturation: str = "softclip",
         name: str = None,  # ignored
         loss: DictConfig = None,  # ignored
         **kwargs,
@@ -351,8 +400,21 @@ class AutoEncoder(nn.Module):
             **kwargs,
         )
 
+        self.saturation = saturation
+
     def saturate(self, x: Tensor) -> Tensor:
-        return x / (1 + abs(x) / 5)
+        if self.saturation is None:
+            return x
+        elif self.saturation == "softclip":
+            return x / (1 + abs(x) / 5)
+        elif self.saturation == "softclip2":
+            return x * torch.rsqrt(1 + torch.square(x / 5))
+        elif self.saturation == "tanh":
+            return torch.tanh(x / 5) * 5
+        elif self.saturation == "arcsinh":
+            return torch.arcsinh(x)
+        else:
+            raise ValueError(f"unknown saturation '{self.saturation}'")
 
     def encode(self, x: Tensor) -> Tensor:
         z = self.encoder(x)
