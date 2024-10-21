@@ -285,7 +285,8 @@ def train(runid: str, cfg: DictConfig):
         dist.barrier()
 
     # W&B
-    run.finish()
+    if rank == 0:
+        run.finish()
 
     # DDP
     dist.destroy_process_group()
