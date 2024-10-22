@@ -85,7 +85,7 @@ def train(
     valid_loader, valid_sampler = get_dataloader(
         dataset=validset,
         batch_size=cfg.train.batch_size,
-        shuffle=True,
+        shuffle=False,
         num_workers=process_cpu_count() // world_size,
         rank=rank,
         world_size=world_size,
@@ -140,8 +140,10 @@ def train(
         epochs = range(cfg.train.epochs)
 
     for epoch in epochs:
-        train_sampler.set_epoch(epoch)
-        valid_sampler.set_epoch(epoch)
+        if train_sampler:
+            train_sampler.set_epoch(epoch)
+        if valid_sampler:
+            valid_sampler.set_epoch(epoch)
 
         ## Train
         autoencoder.train()

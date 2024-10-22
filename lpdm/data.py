@@ -5,17 +5,27 @@ __all__ = [
     "field_postprocess",
     "get_well_dataset",
     "isotropic_power_spectrum",
+    "LazyShuffleDataset",
+    "MiniWellDataset",
 ]
 
 import glob
 import h5py
 import math
+import numpy as np
 import os
+import random
 import torch
 
 from torch import Tensor
-from torch.utils.data import ConcatDataset, DataLoader, Dataset, DistributedSampler
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from torch.utils.data import (
+    ConcatDataset,
+    DataLoader,
+    Dataset,
+    DistributedSampler,
+    IterableDataset,
+)
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 try:
     from the_well.benchmark.data.datasets import GenericWellDataset
@@ -158,7 +168,7 @@ def get_well_dataset(
 def get_dataloader(
     dataset: Dataset,
     batch_size: int,
-    shuffle: bool = False,
+    shuffle: Union[bool, str] = False,
     num_workers: int = 1,
     persistent_workers: bool = True,
     pin_memory: bool = True,
@@ -168,17 +178,34 @@ def get_dataloader(
 ) -> Tuple[DataLoader, DistributedSampler]:
     r"""Instantiates a (distributed) data loader."""
 
-    if rank is None:
-        sampler = None
-    else:
-        sampler = DistributedSampler(
-            dataset=dataset,
-            drop_last=True,
-            shuffle=shuffle,
-            rank=rank,
-            num_replicas=world_size,
-            seed=seed,
+    if shuffle == "lazy":
+        dataset = LazyShuffleDataset(
+            dataset,
+            chunk_size=64,
+            buffer_size=256,
         )
+        sampler = None
+        shuffle = None
+    else:
+        if rank is None:
+            sampler = None
+        else:
+            sampler = DistributedSampler(
+                dataset=dataset,
+                drop_last=True,
+                shuffle=shuffle,
+                rank=rank,
+                num_replicas=world_size,
+                seed=seed,
+            )
+
+    def worker_init_fn(worker_id: int):
+        worker_seed = torch.initial_seed() % 2**32
+        worker_seed = worker_seed + rank
+
+        random.seed(worker_seed)
+        np.random.seed(worker_seed)
+        torch.manual_seed(worker_seed)
 
     loader = DataLoader(
         dataset=dataset,
@@ -187,6 +214,7 @@ def get_dataloader(
         drop_last=True,
         shuffle=shuffle if sampler is None else False,
         num_workers=num_workers,
+        worker_init_fn=worker_init_fn,
         persistent_workers=persistent_workers,
         pin_memory=pin_memory,
     )
@@ -241,6 +269,40 @@ def isotropic_power_spectrum(
     p_iso = p_iso / torch.clip(counts, min=1)
 
     return p_iso, edges
+
+
+class LazyShuffleDataset(IterableDataset):
+    r"""Creates a lazily shuffled dataset."""
+
+    def __init__(self, dataset: Dataset, chunk_size: int = 64, buffer_size: int = 256):
+        super().__init__()
+
+        self.dataset = dataset
+        self.chunk_size = chunk_size
+        self.buffer_size = buffer_size
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __iter__(self) -> Iterable[Any]:
+        buffer = []
+        chunks = [
+            (i, min(i + self.chunk_size, len(self))) for i in range(0, len(self), self.chunk_size)
+        ]
+
+        random.shuffle(chunks)
+
+        while True:
+            while chunks and len(buffer) < self.buffer_size:
+                start, stop = chunks.pop()
+                for i in range(start, stop):
+                    buffer.append(self.dataset[i])
+
+            if buffer:
+                i = random.randrange(len(buffer))
+                yield buffer.pop(i)
+            else:
+                break
 
 
 class MiniWellDataset(Dataset):
