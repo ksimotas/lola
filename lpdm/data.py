@@ -306,7 +306,7 @@ class LazyShuffleDataset(IterableDataset):
 
 
 class MiniWellDataset(Dataset):
-    r"""Creates a mini Well dataset."""
+    r"""Creates a mini-Well dataset."""
 
     def __init__(
         self,
@@ -323,14 +323,16 @@ class MiniWellDataset(Dataset):
         self.stride = stride
 
     def __len__(self) -> int:
-        return self.trajectories * (self.steps_per_trajectory - self.steps * self.stride + 1)
+        return self.trajectories * (self.steps_per_trajectory - (self.steps - 1) * self.stride)
 
     def __getitem__(self, i: int) -> Dict[str, Tensor]:
-        crops_per_trajectory = self.steps_per_trajectory - self.steps * self.stride + 1
+        crops_per_trajectory = self.steps_per_trajectory - (self.steps - 1) * self.stride
 
         i, j = i // crops_per_trajectory, i % crops_per_trajectory
 
-        state = self.file["state"][i, slice(j, j + self.steps * self.stride, self.stride)]
+        state = self.file["state"][
+            i, slice(j, j + (self.steps - 1) * self.stride + 1, self.stride)
+        ]
         label = self.file["label"][i]
 
         return {
