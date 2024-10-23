@@ -20,6 +20,7 @@ all = [
   "distributed_shampoo @ git+https://github.com/facebookresearch/optimizers",
   "hydra-core==1.3.2",
   "ipykernel==6.29.5",
+  "ipywidgets==8.1.5",
   "matplotlib==3.9.0",
   "pre-commit==3.8.0",
   "pytest==8.3.2",
