@@ -1,11 +1,107 @@
 r"""Plotting and image helpers."""
 
+import matplotlib.animation as ani
 import matplotlib.pyplot as plt
 import numpy as np
 
 from numpy.typing import ArrayLike
 from PIL import Image
 from typing import Optional, Sequence, Tuple
+
+
+def animate_fields(
+    x: ArrayLike,
+    y: Optional[ArrayLike] = None,
+    tolerance: float = 1.0,
+    fields: Optional[Sequence[str]] = None,
+    timesteps: Optional[Sequence[int]] = None,
+    cmap: str = "RdBu_r",
+    figsize: Tuple[float, float] = (2.4, 2.4),
+) -> ani.Animation:
+    L, _, _, C = x.shape
+
+    if timesteps is None:
+        timesteps = list(range(L))
+
+    if y is None:
+        fig, axs = plt.subplots(
+            nrows=1,
+            ncols=C,
+            figsize=(figsize[0] * C, figsize[1]),
+            squeeze=False,
+        )
+    else:
+        fig, axs = plt.subplots(
+            nrows=3,
+            ncols=C,
+            figsize=(figsize[0] * C, 3 * figsize[1]),
+            squeeze=False,
+        )
+
+    artists = []
+
+    for i in range(C):
+        vmin = np.nanmin(x[..., i])
+        vmax = np.nanmax(x[..., i])
+
+        if fields:
+            axs[0, i].set_title(f"{fields[i]}")
+
+        for j in range(1):
+            if y is None:
+                img = axs[j, i].imshow(
+                    x[j, ..., i], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
+                )
+                axs[j, i].set_xticks([])
+                axs[j, i].set_yticks([])
+
+                axs[j, 0].set_ylabel("$x_i$")
+
+                artists.append(img)
+            else:
+                img0 = axs[3 * j, i].imshow(
+                    x[j, ..., i], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
+                )
+                axs[3 * j, i].set_xticks([])
+                axs[3 * j, i].set_yticks([])
+
+                img1 = axs[3 * j + 1, i].imshow(
+                    y[j, ..., i], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
+                )
+                axs[3 * j + 1, i].set_xticks([])
+                axs[3 * j + 1, i].set_yticks([])
+
+                img2 = axs[3 * j + 2, i].imshow(
+                    y[j, ..., i] - x[j, ..., i],
+                    cmap="RdBu_r",
+                    vmin=-tolerance,
+                    vmax=tolerance,
+                    interpolation="none",
+                )
+                axs[3 * j + 2, i].set_xticks([])
+                axs[3 * j + 2, i].set_yticks([])
+
+                axs[3 * j, 0].set_ylabel("$x_i$")
+                axs[3 * j + 1, 0].set_ylabel("$y_i$")
+                axs[3 * j + 2, 0].set_ylabel("$y_i - x_i$")
+
+                artists.extend((img0, img1, img2))
+
+    def animate(j):
+        for i in range(C):
+            if y is None:
+                artists[i].set_array(x[j, ..., i])
+            else:
+                artists[3 * i + 0].set_array(x[j, ..., i])
+                artists[3 * i + 1].set_array(y[j, ..., i])
+                artists[3 * i + 2].set_array(y[j, ..., i] - x[j, ..., i])
+
+        return artists
+
+    fig.align_labels()
+    fig.tight_layout()
+
+    return ani.FuncAnimation(fig, animate, frames=L, interval=250)
 
 
 def draw_fields(
