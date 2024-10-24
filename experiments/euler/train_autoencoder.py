@@ -68,7 +68,7 @@ def train(
     train_loader, train_sampler = get_dataloader(
         dataset=trainset,
         batch_size=cfg.train.batch_size,
-        shuffle=True,
+        shuffle="lazy" if cfg.train.lazy_shuffle else True,
         num_workers=process_cpu_count() // world_size,
         rank=rank,
         world_size=world_size,

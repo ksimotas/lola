@@ -179,11 +179,7 @@ def get_dataloader(
     r"""Instantiates a (distributed) data loader."""
 
     if shuffle == "lazy":
-        dataset = LazyShuffleDataset(
-            dataset,
-            chunk_size=64,
-            buffer_size=256,
-        )
+        dataset = LazyShuffleDataset(dataset)
         sampler = None
         shuffle = None
     else:
@@ -274,7 +270,7 @@ def isotropic_power_spectrum(
 class LazyShuffleDataset(IterableDataset):
     r"""Creates a lazily shuffled dataset."""
 
-    def __init__(self, dataset: Dataset, chunk_size: int = 64, buffer_size: int = 256):
+    def __init__(self, dataset: Dataset, chunk_size: int = 16, buffer_size: int = 256):
         super().__init__()
 
         self.dataset = dataset
