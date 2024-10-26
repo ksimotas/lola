@@ -7,7 +7,7 @@ defaults:
 
 trajectory:
   length: 3
-  stride: 1
+  stride: 4
 
 train:
   epochs: 1024

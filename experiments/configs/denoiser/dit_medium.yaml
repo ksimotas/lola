@@ -1,4 +1,4 @@
-name: "dit_medium_${denoiser.improved}"
+name: "dit_medium"
 arch: "dit"
 improved: false
 emb_features: 256
@@ -10,4 +10,3 @@ dropout: 0.01
 patch_size: [1, 2, 2]
 window_size: null
 rope: true
-registers: 0

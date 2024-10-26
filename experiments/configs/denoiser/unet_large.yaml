@@ -1,4 +1,4 @@
-name: "unet_large_${denoiser.improved}"
+name: "unet_large"
 arch: "unet"
 improved: false
 emb_features: 256

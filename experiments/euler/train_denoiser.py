@@ -125,7 +125,7 @@ def train(runid: str, cfg: DictConfig):
         **cfg.denoiser,
     )
 
-    criterion = DenoiserLoss(**cfg.denoiser.loss).to(device)
+    denoiser_loss = DenoiserLoss(**cfg.denoiser.loss).to(device)
 
     if cfg.boot_state:
         denoiser.load_state_dict(torch.load(cfg.boot_state))
@@ -184,7 +184,7 @@ def train(runid: str, cfg: DictConfig):
             label = label.to(device, non_blocking=True)
 
             if (step + 1) % cfg.train.accumulation == 0:
-                loss = criterion(denoiser, z, label=label)
+                loss = denoiser_loss(denoiser, z, label=label)
                 loss.backward()
 
                 grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
@@ -193,7 +193,7 @@ def train(runid: str, cfg: DictConfig):
                 average.update_parameters(denoiser.module)
             else:
                 with denoiser.no_sync():
-                    loss = criterion(denoiser, z, label=label)
+                    loss = denoiser_loss(denoiser, z, label=label)
                     loss.backward()
 
             losses.append(loss.detach())
@@ -238,7 +238,7 @@ def train(runid: str, cfg: DictConfig):
                 label = batch["label"]
                 label = label.to(device, non_blocking=True)
 
-                loss = criterion(denoiser, z, label=label)
+                loss = denoiser_loss(denoiser, z, label=label)
                 losses.append(loss)
 
         losses = torch.stack(losses)
@@ -297,7 +297,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("overrides", nargs="*", type=str)
     parser.add_argument("--cpus-per-gpu", type=int, default=8)
-    parser.add_argument("--gpus", type=int, default=4)
+    parser.add_argument("--gpus", type=int, default=8)
     parser.add_argument("--gpuxl", action="store_true", default=False)
     parser.add_argument("--ram", type=str, default="256GB")
     parser.add_argument("--time", type=str, default="7-00:00:00")

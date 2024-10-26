@@ -6,9 +6,9 @@ defaults:
 
 train:
   epochs: 256
-  epoch_size: 16384
+  epoch_size: 65536
   batch_size: 16
   accumulation: 1
-  lazy_shuffle: false
+  lazy_shuffle: true
 
 boot_state: null

@@ -5,7 +5,6 @@ __all__ = [
     "Encoder",
     "Decoder",
     "AutoEncoder",
-    "AutoEncoderLoss",
 ]
 
 import math
@@ -19,7 +18,6 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 
 from .layers import (
     ConvNd,
-    LayerNorm,
     Patchify,
     SelfAttentionNd,
     Unpatchify,
@@ -36,7 +34,6 @@ class ResBlock(nn.Module):
 
     Arguments:
         channels: The number of channels :math:`C`.
-        version: The residual block version.
         groups: The number of groups in :class:`torch.nn.GroupNorm` layers.
         attention_heads: The number of attention heads.
         dropout: The dropout rate in :math:`[0, 1]`.
@@ -47,7 +44,6 @@ class ResBlock(nn.Module):
     def __init__(
         self,
         channels: int,
-        version: str = "pre-group-norm",
         groups: int = 16,
         attention_heads: Optional[int] = None,
         dropout: Optional[float] = None,
@@ -56,48 +52,28 @@ class ResBlock(nn.Module):
     ):
         super().__init__()
 
-        layers = [
+        # Attention
+        if attention_heads is None:
+            self.attn = nn.Identity()
+        else:
+            self.attn = Residual(
+                SelfAttentionNd(channels, heads=attention_heads),
+            )
+
+        # Block
+        self.block = nn.Sequential(
+            nn.GroupNorm(
+                num_groups=min(groups, channels),
+                num_channels=channels,
+                affine=False,
+            ),
             ConvNd(channels, channels, spatial=spatial, **kwargs),
             nn.SiLU(),
             nn.Identity() if dropout is None else nn.Dropout(dropout),
             ConvNd(channels, channels, spatial=spatial, **kwargs),
-        ]
+        )
 
-        if version == "pre-layer-norm":
-            layers.insert(0, LayerNorm(dim=-spatial - 1))
-        elif version == "post-layer-norm":
-            layers.append(LayerNorm(dim=-spatial - 1))
-        elif version == "pre-group-norm":
-            layers.insert(
-                0,
-                nn.GroupNorm(
-                    num_groups=min(groups, channels),
-                    num_channels=channels,
-                    affine=False,
-                ),
-            )
-        elif version == "post-group-norm":
-            layers.append(
-                nn.GroupNorm(
-                    num_groups=min(groups, channels),
-                    num_channels=channels,
-                    affine=False,
-                )
-            )
-        else:
-            raise ValueError(f"unknown version '{version}'")
-
-        if attention_heads is not None:
-            layers.insert(
-                0,
-                Residual(
-                    SelfAttentionNd(channels, heads=attention_heads),
-                ),
-            )
-
-        self.block = nn.Sequential(*layers)
-
-        self.register_buffer("output_scale", torch.as_tensor(1 / math.sqrt(2)))
+        self.register_buffer("out_scale", torch.as_tensor(math.sqrt(1 / 2)))
 
     def forward(self, x: Tensor) -> Tensor:
         r"""
@@ -108,7 +84,10 @@ class ResBlock(nn.Module):
             The output tensor, with shape :math:`(B, C, H_1, ..., H_N)`.
         """
 
-        return self.output_scale * (x + self.block(x))
+        y = self.attn(x)
+        y = self.block(y)
+
+        return self.out_scale * (x + y)
 
 
 class Encoder(nn.Module):
@@ -122,7 +101,6 @@ class Encoder(nn.Module):
         kernel_size: The kernel size of all convolutions.
         stride: The stride of the downsampling convolutions.
         pixel_shuffle: Whether to use pixel shuffling or not.
-        res_block_version: The residual block version.
         attention_heads: The number of attention heads at each depth.
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions.
@@ -139,9 +117,7 @@ class Encoder(nn.Module):
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
         pixel_shuffle: bool = False,
-        res_block_version: str = "pre-group-norm",
         attention_heads: Dict[int, int] = {},  # noqa: B006
-        spectral_modes: Dict[int, int] = {},  # noqa: B006
         dropout: Optional[float] = None,
         spatial: int = 2,
         periodic: bool = False,
@@ -195,18 +171,15 @@ class Encoder(nn.Module):
                 blocks.append(ConvNd(in_channels, hid_channels[i], spatial=spatial, **kwargs))
 
             for _ in range(num_blocks):
-                if i in attention_heads:
-                    pass
-                else:
-                    blocks.append(
-                        ResBlock(
-                            hid_channels[i],
-                            version=res_block_version,
-                            dropout=dropout,
-                            spatial=spatial,
-                            **kwargs,
-                        )
+                blocks.append(
+                    ResBlock(
+                        hid_channels[i],
+                        attention_heads=attention_heads.get(i, None),
+                        dropout=dropout,
+                        spatial=spatial,
+                        **kwargs,
                     )
+                )
 
             if i + 1 == len(hid_blocks):
                 blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
@@ -245,7 +218,6 @@ class Decoder(nn.Module):
         kernel_size: The kernel size of all convolutions.
         stride: The stride of the downsampling convolutions.
         pixel_shuffle: Whether to use pixel shuffling or not.
-        res_block_version: The residual block version.
         attention_heads: The number of attention heads at each depth.
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions.
@@ -262,9 +234,7 @@ class Decoder(nn.Module):
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
         pixel_shuffle: bool = False,
-        res_block_version: str = "pre-group-norm",
         attention_heads: Dict[int, int] = {},  # noqa: B006
-        spectral_modes: Dict[int, int] = {},  # noqa: B006
         dropout: Optional[float] = None,
         spatial: int = 2,
         periodic: bool = False,
@@ -295,18 +265,15 @@ class Decoder(nn.Module):
                 blocks.append(ConvNd(in_channels, hid_channels[i], spatial=spatial, **kwargs))
 
             for _ in range(num_blocks):
-                if i in attention_heads:
-                    pass
-                else:
-                    blocks.append(
-                        ResBlock(
-                            hid_channels[i],
-                            version=res_block_version,
-                            dropout=dropout,
-                            spatial=spatial,
-                            **kwargs,
-                        )
+                blocks.append(
+                    ResBlock(
+                        hid_channels[i],
+                        attention_heads=attention_heads.get(i, None),
+                        dropout=dropout,
+                        spatial=spatial,
+                        **kwargs,
                     )
+                )
 
             if i > 0:
                 if pixel_shuffle:
@@ -377,7 +344,7 @@ class AutoEncoder(nn.Module):
         lat_channels: int,
         hid_channels: Sequence[int] = (64, 128, 256),
         hid_blocks: Sequence[int] = (3, 3, 3),
-        saturation: str = "softclip",
+        saturation: str = "arcsinh",
         name: str = None,  # ignored
         loss: DictConfig = None,  # ignored
         **kwargs,
@@ -424,41 +391,7 @@ class AutoEncoder(nn.Module):
     def decode(self, z: Tensor) -> Tensor:
         return self.decoder(z)
 
-    def forward(self, x: Tensor) -> Tensor:
-        return self.decode(self.encode(x))
-
-
-class AutoEncoderLoss(nn.Module):
-    r"""Creates a loss module for a deterministic auto-encoder."""
-
-    def __init__(
-        self,
-        losses: Sequence[str] = ["mse"],  # noqa: B006
-        weights: Sequence[float] = [1.0],  # noqa: B006
-    ):
-        super().__init__()
-
-        assert len(losses) == len(weights)
-
-        LOSSES = {
-            "mae": mae,
-            "mse": mse,
-        }
-
-        self.losses = [LOSSES[key] for key in losses]
-        self.register_buffer("weights", torch.as_tensor(weights))
-
-    def forward(self, autoencoder: nn.Module, x: Tensor) -> Tuple[Tensor, Tensor]:
-        y = autoencoder(x)
-
-        values = torch.stack([loss(x, y) for loss in self.losses])
-
-        return torch.vdot(self.weights, values), y
-
-
-def mae(x: Tensor, y: Tensor) -> Tensor:
-    return (x - y).abs().mean()
-
-
-def mse(x: Tensor, y: Tensor) -> Tensor:
-    return (x - y).square().mean()
+    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor]:
+        z = self.encode(x)
+        y = self.decoder(z)
+        return y, z

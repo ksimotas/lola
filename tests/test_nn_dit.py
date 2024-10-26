@@ -16,7 +16,6 @@ from lpdm.nn.dit import DiT
 @pytest.mark.parametrize("spatial", [1, 2])
 @pytest.mark.parametrize("patch_size", [2, 4])
 @pytest.mark.parametrize("window_size", [None, 3])
-@pytest.mark.parametrize("registers", [0, 3])
 @pytest.mark.parametrize("batch_size", [4])
 def test_DiT(
     tmp_path: Path,
@@ -29,7 +28,6 @@ def test_DiT(
     spatial: int,
     patch_size: int,
     window_size: int,
-    registers: int,
     batch_size: int,
 ):
     make = lambda: DiT(
@@ -43,7 +41,6 @@ def test_DiT(
         spatial=spatial,
         patch_size=patch_size,
         window_size=None if window_size is None else (window_size,) * spatial,
-        registers=registers,
     )
 
     net = make()

@@ -29,7 +29,8 @@ def train(
     from tqdm import trange
 
     from lpdm.data import field_preprocess, get_dataloader, get_well_dataset
-    from lpdm.nn.autoencoder import AutoEncoder, AutoEncoderLoss
+    from lpdm.loss import WeightedLoss
+    from lpdm.nn.autoencoder import AutoEncoder
     from lpdm.optim import get_optimizer, safe_gd_step
     from lpdm.utils import process_cpu_count, randseed
 
@@ -105,7 +106,7 @@ def train(
         **cfg.ae,
     )
 
-    criterion = AutoEncoderLoss(**cfg.ae.loss).to(device)
+    autoencoder_loss = WeightedLoss(**cfg.ae.loss).to(device)
 
     if cfg.boot_state:
         autoencoder.load_state_dict(torch.load(cfg.boot_state))
@@ -157,14 +158,16 @@ def train(
             x = rearrange(x, "B 1 H W C -> B C H W")
 
             if (step + 1) % cfg.train.accumulation == 0:
-                loss, y = criterion(autoencoder, x)
+                y, z = autoencoder(x)
+                loss = autoencoder_loss(x, y)
                 loss.backward()
 
                 grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
                 grads.append(grad_norm)
             else:
                 with autoencoder.no_sync():
-                    loss, y = criterion(autoencoder, x)
+                    y, z = autoencoder(x)
+                    loss = autoencoder_loss(x, y)
                     loss.backward()
 
             losses.append(loss.detach())
@@ -207,7 +210,8 @@ def train(
                 x = preprocess(x)
                 x = rearrange(x, "B 1 H W C -> B C H W")
 
-                loss, y = criterion(autoencoder, x)
+                y, z = autoencoder(x)
+                loss = autoencoder_loss(x, y)
                 losses.append(loss)
 
         losses = torch.stack(losses)
@@ -257,7 +261,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("overrides", nargs="*", type=str)
     parser.add_argument("--cpus-per-gpu", type=int, default=8)
-    parser.add_argument("--gpus", type=int, default=4)
+    parser.add_argument("--gpus", type=int, default=8)
     parser.add_argument("--gpuxl", action="store_true", default=False)
     parser.add_argument("--ram", type=str, default="256GB")
     parser.add_argument("--time", type=str, default="7-00:00:00")

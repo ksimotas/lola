@@ -14,8 +14,6 @@ from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 from typing import Optional, Tuple, Union
 
-from .layers import RMSNorm
-
 
 class MultiheadSelfAttention(nn.Module):
     r"""Creates a multi-head self-attention layer.
@@ -44,7 +42,11 @@ class MultiheadSelfAttention(nn.Module):
         self.y_proj = nn.Linear(channels, channels)
 
         if qk_norm:
-            self.qk_norm = RMSNorm(dim=-1)
+            self.qk_norm = nn.RMSNorm(
+                channels // attention_heads,
+                elementwise_affine=False,
+                eps=1e-5,
+            )
         else:
             self.qk_norm = nn.Identity()
 

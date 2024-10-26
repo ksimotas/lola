@@ -17,13 +17,11 @@ import torch
 import torch.nn as nn
 import xformers.components.attention.core as xfa
 
-from einops import repeat
 from einops.layers.torch import Rearrange
 from torch import Tensor
 from typing import Hashable, Optional, Sequence, Tuple, Union
 
 from .attention import MultiheadSelfAttention
-from .layers import LayerNorm
 
 
 class DiTBlock(nn.Module):
@@ -47,17 +45,17 @@ class DiTBlock(nn.Module):
     ):
         super().__init__()
 
-        # Ada-zero
-        self.norm = LayerNorm(dim=-1)
+        # Ada-LN Zero
+        self.norm = nn.LayerNorm(channels, elementwise_affine=False)
         self.ada_zero = nn.Sequential(
-            nn.Linear(mod_features, mod_features),
+            nn.Linear(mod_features, channels),
             nn.SiLU(),
-            nn.Linear(mod_features, 6 * channels),
+            nn.Linear(channels, 6 * channels),
             Rearrange("... (n C) -> n ... 1 C", n=6),
         )
 
         layer = self.ada_zero[-2]
-        layer.weight = nn.Parameter(layer.weight * 1e-2)
+        layer.weight = nn.Parameter(layer.weight.detach() * 1e-2)
 
         # MSA
         self.msa = MultiheadSelfAttention(channels, **kwargs)
@@ -129,7 +127,6 @@ class DiT(nn.Module):
         patch_size: The path size.
         window_size: The local attention window size.
         rope: Whether to use rotary positional embedding (RoPE) or not.
-        registers: The number of registers.
         kwargs: Keyword arguments passed to :class:`DiTBlock`.
     """
 
@@ -146,7 +143,6 @@ class DiT(nn.Module):
         patch_size: Union[int, Sequence[int]] = 4,
         window_size: Optional[Sequence[int]] = None,
         rope: bool = True,
-        registers: int = 0,
         **kwargs,
     ):
         super().__init__()
@@ -199,15 +195,12 @@ class DiT(nn.Module):
         self.spatial = spatial
         self.window_size = window_size
 
-        self.registers = nn.Parameter(torch.randn(registers, hid_channels))
-
     @staticmethod
     @functools.cache
     def indices_and_mask(
         shape: Sequence[int],
         spatial: int,
         window_size: Sequence[int],
-        registers: int,
         dtype: torch.dtype,
         device: torch.device,
     ) -> Tuple[Tensor, Tensor]:
@@ -227,15 +220,9 @@ class DiT(nn.Module):
             delta = torch.minimum(delta, delta.new_tensor(shape) - delta)
 
             mask = torch.all(delta <= indices.new_tensor(window_size) // 2, dim=-1)
-            mask = torch.nn.functional.pad(mask, (0, registers, 0, registers), value=True)
 
             if xfa._has_cpp_library:
                 mask = xfa.SparseCS(mask, device=mask.device)._mat
-
-        register_indices = torch.arange(-registers, 0, device=device)
-        register_indices = repeat(register_indices, "R -> R n", n=spatial)
-
-        indices = torch.cat((indices, register_indices), dim=-2)
 
         return indices.to(dtype=dtype), mask
 
@@ -258,19 +245,16 @@ class DiT(nn.Module):
             shape,
             spatial=self.spatial,
             window_size=None if self.window_size is None else tuple(self.window_size),
-            registers=len(self.registers),
             dtype=x.dtype,
             device=x.device,
         )
 
         x = torch.flatten(x, -self.spatial - 1, -2)
-        x = torch.cat((x, self.registers.expand(x.shape[0], -1, -1)), dim=-2)
         x = x + self.positional_embedding(indices / indices.new_tensor(shape))
 
         for block in itertools.islice(self.blocks, early_out):
             x = block(x, mod, indices=indices, mask=mask)
 
-        x = torch.narrow(x, start=0, length=math.prod(shape), dim=-2)
         x = torch.unflatten(x, sizes=shape, dim=-2)
 
         x = self.out_proj(x)

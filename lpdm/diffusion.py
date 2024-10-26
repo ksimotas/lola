@@ -21,7 +21,6 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 
 from .nn.dit import DiT
 from .nn.embedding import SineEncoding
-from .nn.swin import Swin
 from .nn.unet import UNet
 
 
@@ -209,12 +208,11 @@ def get_denoiser(
     # Denoiser
     improved: bool = True,
     schedule: DictConfig = None,
-    # DiT & Swin
+    # DiT
     qk_norm: bool = True,
     patch_size: Union[int, Sequence[int]] = 4,
     window_size: Optional[Sequence[int]] = None,
     rope: bool = True,
-    registers: int = 0,
     # UNet
     kernel_size: Union[int, Sequence[int]] = 3,
     stride: Union[int, Sequence[int]] = 2,
@@ -230,22 +228,6 @@ def get_denoiser(
 
     if arch == "dit":
         backbone = DiT(
-            in_channels=channels,
-            out_channels=2 * channels if improved else channels,
-            mod_features=emb_features,
-            hid_channels=hid_channels,
-            hid_blocks=hid_blocks,
-            attention_heads=attention_heads,
-            qk_norm=qk_norm,
-            dropout=dropout,
-            spatial=len(shape) - 1,
-            patch_size=patch_size,
-            window_size=window_size,
-            rope=rope,
-            registers=registers,
-        )
-    elif arch == "swin":
-        backbone = Swin(
             in_channels=channels,
             out_channels=2 * channels if improved else channels,
             mod_features=emb_features,

@@ -16,7 +16,7 @@ from einops.layers.torch import Rearrange
 from torch import Tensor
 from typing import Dict, Optional, Sequence, Union
 
-from .layers import ConvNd, LayerNorm, SelfAttentionNd
+from .layers import ConvNd, SelfAttentionNd
 
 
 class Residual(nn.Sequential):
@@ -30,6 +30,7 @@ class UNetBlock(nn.Module):
     Arguments:
         channels: The number of channels :math:`C`.
         mod_features: The number of modulating features :math:`D`.
+        groups: The number of groups in :class:`torch.nn.GroupNorm` layers.
         attention_heads: The number of attention heads.
         dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions :math:`N`.
@@ -40,6 +41,7 @@ class UNetBlock(nn.Module):
         self,
         channels: int,
         mod_features: int,
+        groups: int = 16,
         attention_heads: Optional[int] = None,
         dropout: Optional[float] = None,
         spatial: int = 2,
@@ -47,33 +49,37 @@ class UNetBlock(nn.Module):
     ):
         super().__init__()
 
-        # Ada-zero
+        # Attention
+        if attention_heads is None:
+            self.attn = nn.Identity()
+        else:
+            self.attn = Residual(
+                SelfAttentionNd(channels, heads=attention_heads),
+            )
+
+        # Ada-GN Zero
+        self.norm = nn.GroupNorm(
+            num_groups=min(groups, channels),
+            num_channels=channels,
+            affine=False,
+        )
         self.ada_zero = nn.Sequential(
-            nn.Linear(mod_features, mod_features),
+            nn.Linear(mod_features, max(mod_features, channels)),
             nn.SiLU(),
-            nn.Linear(mod_features, 3 * channels),
+            nn.Linear(max(mod_features, channels), 3 * channels),
             Rearrange("... (n C) -> n ... C" + " 1" * spatial, n=3),
         )
 
         layer = self.ada_zero[-2]
-        layer.weight = nn.Parameter(layer.weight * 1e-2)
+        layer.weight = nn.Parameter(layer.weight.detach() * 1e-2)
 
         # Block
         self.block = nn.Sequential(
-            LayerNorm(dim=1),
             ConvNd(channels, channels, spatial=spatial, **kwargs),
             nn.SiLU(),
             nn.Identity() if dropout is None else nn.Dropout(dropout),
             ConvNd(channels, channels, spatial=spatial, **kwargs),
         )
-
-        if attention_heads is not None:
-            self.block.append(
-                Residual(
-                    nn.SiLU(),
-                    SelfAttentionNd(channels, heads=attention_heads),
-                )
-            )
 
     def forward(self, x: Tensor, mod: Tensor) -> Tensor:
         r"""
@@ -87,10 +93,10 @@ class UNetBlock(nn.Module):
 
         a, b, c = self.ada_zero(mod)
 
-        y = (a + 1) * x + b
+        y = self.attn(x)
+        y = (a + 1) * self.norm(y) + b
         y = self.block(y)
-        y = x + c * y
-        y = y * torch.rsqrt(1 + c * c)
+        y = (x + c * y) * torch.rsqrt(1 + c * c)
 
         return y
 
@@ -158,6 +164,7 @@ class UNet(nn.Module):
                         **kwargs,
                     )
                 )
+
                 up.append(
                     UNetBlock(
                         hid_channels[i],
@@ -172,27 +179,19 @@ class UNet(nn.Module):
             if i > 0:
                 do.insert(
                     0,
-                    nn.Sequential(
-                        ConvNd(
-                            hid_channels[i - 1],
-                            hid_channels[i],
-                            stride=stride,
-                            spatial=spatial,
-                            **kwargs,
-                        ),
-                        LayerNorm(dim=1),
+                    ConvNd(
+                        hid_channels[i - 1],
+                        hid_channels[i],
+                        stride=stride,
+                        spatial=spatial,
+                        **kwargs,
                     ),
                 )
 
-                up.append(
-                    nn.Sequential(
-                        LayerNorm(dim=1),
-                        nn.Upsample(scale_factor=tuple(stride), mode="nearest"),
-                    )
-                )
+                up.append(nn.Upsample(scale_factor=tuple(stride), mode="nearest"))
             else:
                 do.insert(0, ConvNd(in_channels, hid_channels[i], spatial=spatial, **kwargs))
-                up.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, kernel_size=1))
+                up.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
 
             if i + 1 < len(hid_blocks):
                 up.insert(

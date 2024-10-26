@@ -6,7 +6,6 @@ __all__ = [
     "dit",
     "embedding",
     "layers",
-    "swin",
     "unet",
 ]
 
