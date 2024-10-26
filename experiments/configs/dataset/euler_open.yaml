@@ -2,6 +2,7 @@ name: "euler_open"
 physics: "euler_multi_quadrants_openBC"
 include_filters: []
 periodic: false
+fields: ["energy", "density", "pressure", "momentum_x", "momentum_y"]
 transform: {0: "log", 1: "log", 2: "log"}
 stats:
   mean: [0.77, -0.30, -0.36, 0.00, 0.00]
