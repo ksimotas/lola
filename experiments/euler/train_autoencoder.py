@@ -41,6 +41,7 @@ def train(
     world_size = dist.get_world_size()
 
     device_id = os.environ.get("LOCAL_RANK", rank)
+    device_id = int(device_id)
     device = torch.device(f"cuda:{device_id}")
     torch.cuda.set_device(device)
 
@@ -109,11 +110,11 @@ def train(
     autoencoder_loss = WeightedLoss(**cfg.ae.loss).to(device)
 
     if cfg.boot_state:
-        autoencoder.load_state_dict(torch.load(cfg.boot_state))
+        autoencoder.load_state_dict(torch.load(cfg.boot_state, weights_only=True))
 
     autoencoder = DistributedDataParallel(
         module=autoencoder.to(device),
-        device_ids=[device],
+        device_ids=[device_id],
     )
 
     optimizer, scheduler = get_optimizer(
@@ -246,7 +247,7 @@ def train(
             state = autoencoder.module.state_dict()
             torch.save(state, runpath / "state.pth")
 
-        dist.barrier()
+        dist.barrier(device_ids=[device_id])
 
     # W&B
     if rank == 0:

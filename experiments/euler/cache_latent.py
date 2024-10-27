@@ -69,7 +69,7 @@ def cache_latent(
         **cfg.ae,
     )
 
-    autoencoder.load_state_dict(torch.load(runpath / "state.pth"))
+    autoencoder.load_state_dict(torch.load(runpath / "state.pth", weights_only=True))
     autoencoder.to(device)
     autoencoder.eval()
 

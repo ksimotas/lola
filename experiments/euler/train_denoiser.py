@@ -35,6 +35,7 @@ def train(runid: str, cfg: DictConfig):
     world_size = dist.get_world_size()
 
     device_id = os.environ.get("LOCAL_RANK", rank)
+    device_id = int(device_id)
     device = torch.device(f"cuda:{device_id}")
     torch.cuda.set_device(device)
 
@@ -48,7 +49,7 @@ def train(runid: str, cfg: DictConfig):
     if rank == 0:
         os.symlink(os.path.realpath(cfg.ae_path, strict=True), runpath / "autoencoder")
 
-    dist.barrier()
+    dist.barrier(device_ids=[device_id])
 
     with open_dict(cfg):
         cfg.path = str(runpath)
@@ -128,11 +129,11 @@ def train(runid: str, cfg: DictConfig):
     denoiser_loss = DenoiserLoss(**cfg.denoiser.loss).to(device)
 
     if cfg.boot_state:
-        denoiser.load_state_dict(torch.load(cfg.boot_state))
+        denoiser.load_state_dict(torch.load(cfg.boot_state, weights_only=True))
 
     denoiser = DistributedDataParallel(
         module=denoiser.to(device),
-        device_ids=[device],
+        device_ids=[device_id],
     )
 
     optimizer, scheduler = get_optimizer(
@@ -282,7 +283,7 @@ def train(runid: str, cfg: DictConfig):
                 torch.save(state, runpath / "state_best.pth")
                 torch.save(state_ema, runpath / "state_best_ema.pth")
 
-        dist.barrier()
+        dist.barrier(device_ids=[device_id])
 
     # W&B
     if rank == 0:
