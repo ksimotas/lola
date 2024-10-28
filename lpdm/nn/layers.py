@@ -131,7 +131,7 @@ class SelfAttentionNd(nn.MultiheadAttention):
         self,
         channels: int,
         heads: int = 1,
-        checkpointing: bool = True,
+        checkpointing: bool = False,
         **kwargs,
     ):
         super().__init__(embed_dim=channels, num_heads=heads, batch_first=True, **kwargs)
@@ -141,10 +141,10 @@ class SelfAttentionNd(nn.MultiheadAttention):
     def _forward(self, x: Tensor) -> Tensor:
         r"""
         Arguments:
-            x: The input tensor :math:`x`, with shape :math:`(B, C, H_1, ..., H_N)`.
+            x: The input tensor :math:`x`, with shape :math:`(B, C, L_1, ..., L_N)`.
 
         Returns:
-            The ouput tensor :math:`y`, with shape :math:`(B, C, H_1, ..., H_N)`.
+            The ouput tensor :math:`y`, with shape :math:`(B, C, L_1, ..., L_N)`.
         """
 
         y = rearrange(x, "B C ...  -> B (...) C")

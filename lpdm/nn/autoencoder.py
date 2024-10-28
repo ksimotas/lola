@@ -36,8 +36,8 @@ class ResBlock(nn.Module):
         channels: The number of channels :math:`C`.
         groups: The number of groups in :class:`torch.nn.GroupNorm` layers.
         attention_heads: The number of attention heads.
-        dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions :math:`N`.
+        dropout: The dropout rate in :math:`[0, 1]`.
         kwargs: Keyword arguments passed to :class:`torch.nn.Conv2d`.
     """
 
@@ -46,8 +46,8 @@ class ResBlock(nn.Module):
         channels: int,
         groups: int = 16,
         attention_heads: Optional[int] = None,
-        dropout: Optional[float] = None,
         spatial: int = 2,
+        dropout: Optional[float] = None,
         **kwargs,
     ):
         super().__init__()
@@ -78,10 +78,10 @@ class ResBlock(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         r"""
         Arguments:
-            x: The input tensor, with shape :math:`(B, C, H_1, ..., H_N)`.
+            x: The input tensor, with shape :math:`(B, C, L_1, ..., L_N)`.
 
         Returns:
-            The output tensor, with shape :math:`(B, C, H_1, ..., H_N)`.
+            The output tensor, with shape :math:`(B, C, L_1, ..., L_N)`.
         """
 
         y = self.attn(x)
@@ -102,9 +102,9 @@ class Encoder(nn.Module):
         stride: The stride of the downsampling convolutions.
         pixel_shuffle: Whether to use pixel shuffling or not.
         attention_heads: The number of attention heads at each depth.
-        dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions.
         periodic: Whether the spatial dimensions are periodic or not.
+        dropout: The dropout rate in :math:`[0, 1]`.
         checkpointing: Whether to use gradient checkpointing or not.
     """
 
@@ -118,9 +118,9 @@ class Encoder(nn.Module):
         stride: Union[int, Sequence[int]] = 2,
         pixel_shuffle: bool = False,
         attention_heads: Dict[int, int] = {},  # noqa: B006
-        dropout: Optional[float] = None,
         spatial: int = 2,
         periodic: bool = False,
+        dropout: Optional[float] = None,
         checkpointing: bool = False,
     ):
         super().__init__()
@@ -191,10 +191,10 @@ class Encoder(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         r"""
         Arguments:
-            x: The input tensor, with shape :math:`(B, C_i, H_1, ..., H_N)`.
+            x: The input tensor, with shape :math:`(B, C_i, L_1, ..., L_N)`.
 
         Returns:
-            The output tensor, with shape :math:`(B, C_o, H_1 / 2^D, ..., H_N  / 2^D)`.
+            The output tensor, with shape :math:`(B, C_o, L_1 / 2^D, ..., L_N  / 2^D)`.
         """
 
         for blocks in self.descent:
@@ -219,9 +219,9 @@ class Decoder(nn.Module):
         stride: The stride of the downsampling convolutions.
         pixel_shuffle: Whether to use pixel shuffling or not.
         attention_heads: The number of attention heads at each depth.
-        dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions.
         periodic: Whether the spatial dimensions are periodic or not.
+        dropout: The dropout rate in :math:`[0, 1]`.
         checkpointing: Whether to use gradient checkpointing or not.
     """
 
@@ -235,9 +235,9 @@ class Decoder(nn.Module):
         stride: Union[int, Sequence[int]] = 2,
         pixel_shuffle: bool = False,
         attention_heads: Dict[int, int] = {},  # noqa: B006
-        dropout: Optional[float] = None,
         spatial: int = 2,
         periodic: bool = False,
+        dropout: Optional[float] = None,
         checkpointing: bool = False,
     ):
         super().__init__()
@@ -269,8 +269,8 @@ class Decoder(nn.Module):
                     ResBlock(
                         hid_channels[i],
                         attention_heads=attention_heads.get(i, None),
-                        dropout=dropout,
                         spatial=spatial,
+                        dropout=dropout,
                         **kwargs,
                     )
                 )
@@ -310,10 +310,10 @@ class Decoder(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         r"""
         Arguments:
-            x: The input tensor, with shape :math:`(B, C_i, H_1, ..., H_N)`.
+            x: The input tensor, with shape :math:`(B, C_i, L_1, ..., L_N)`.
 
         Returns:
-            The output tensor, with shape :math:`(B, C_o, H_1 \times 2^D, ..., H_N  \times 2^D)`.
+            The output tensor, with shape :math:`(B, C_o, L_1 \times 2^D, ..., L_N  \times 2^D)`.
         """
 
         for blocks in self.ascent:

@@ -12,10 +12,10 @@ from lpdm.nn.dit import DiT
 @pytest.mark.parametrize("in_channels, out_channels", [(3, 5)])
 @pytest.mark.parametrize("mod_features", [16])
 @pytest.mark.parametrize("attention_heads", [1, 4])
-@pytest.mark.parametrize("dropout", [None, 0.1])
 @pytest.mark.parametrize("spatial", [1, 2])
 @pytest.mark.parametrize("patch_size", [2, 4])
 @pytest.mark.parametrize("window_size", [None, 3])
+@pytest.mark.parametrize("dropout", [None, 0.1])
 @pytest.mark.parametrize("batch_size", [4])
 def test_DiT(
     tmp_path: Path,
@@ -24,10 +24,10 @@ def test_DiT(
     out_channels: int,
     mod_features: int,
     attention_heads: int,
-    dropout: float,
     spatial: int,
     patch_size: int,
     window_size: int,
+    dropout: float,
     batch_size: int,
 ):
     make = lambda: DiT(
@@ -37,10 +37,10 @@ def test_DiT(
         hid_channels=64,
         hid_blocks=3,
         attention_heads=attention_heads,
-        dropout=dropout,
         spatial=spatial,
         patch_size=patch_size,
         window_size=None if window_size is None else (window_size,) * spatial,
+        dropout=dropout,
     )
 
     net = make()

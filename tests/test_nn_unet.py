@@ -17,8 +17,8 @@ from lpdm.nn.unet import UNet
 @pytest.mark.parametrize("in_channels, out_channels", [(3, 5)])
 @pytest.mark.parametrize("mod_features", [16])
 @pytest.mark.parametrize("attention_heads", [{}, {2: 1}])
-@pytest.mark.parametrize("dropout", [None, 0.1])
 @pytest.mark.parametrize("spatial", [1, 2])
+@pytest.mark.parametrize("dropout", [None, 0.1])
 @pytest.mark.parametrize("batch_size", [4])
 def test_UNet(
     tmp_path: Path,
@@ -27,8 +27,8 @@ def test_UNet(
     out_channels: int,
     mod_features: int,
     attention_heads: Dict[int, int],
-    dropout: float,
     spatial: int,
+    dropout: float,
     batch_size: int,
 ):
     make = lambda: UNet(
@@ -38,8 +38,8 @@ def test_UNet(
         hid_channels=(5, 7, 11),
         hid_blocks=(1, 2, 3),
         attention_heads=attention_heads,
-        dropout=dropout,
         spatial=spatial,
+        dropout=dropout,
     )
 
     net = make()

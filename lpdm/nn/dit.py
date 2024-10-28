@@ -8,6 +8,8 @@ References:
 __all__ = [
     "DiTBlock",
     "DiT",
+    "DiNATBlock",
+    "DiNAT",
 ]
 
 import functools
@@ -21,7 +23,8 @@ from einops.layers.torch import Rearrange
 from torch import Tensor
 from typing import Hashable, Optional, Sequence, Tuple, Union
 
-from .attention import MultiheadSelfAttention
+from .attention import MultiheadNeighborhoodAttention, MultiheadSelfAttention
+from .layers import ConvNd
 
 
 class DiTBlock(nn.Module):
@@ -32,6 +35,7 @@ class DiTBlock(nn.Module):
         mod_features: The number of modulating features :math:`D`.
         spatial: The number of spatial dimensinons :math:`N`.
         rope: Whether to use rotary positional embedding (RoPE) or not.
+        dropout: The dropout rate in :math:`[0, 1]`.
         kwargs: Keyword arguments passed to :class:`MultiheadSelfAttention`.
     """
 
@@ -41,6 +45,7 @@ class DiTBlock(nn.Module):
         mod_features: int,
         spatial: int = 2,
         rope: bool = True,
+        dropout: Optional[float] = None,
         **kwargs,
     ):
         super().__init__()
@@ -73,6 +78,7 @@ class DiTBlock(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(channels, 4 * channels),
             nn.SiLU(),
+            nn.Identity() if dropout is None else nn.Dropout(dropout),
             nn.Linear(4 * channels, channels),
         )
 
@@ -122,11 +128,11 @@ class DiT(nn.Module):
         hid_channels: The numbers of hidden token channels.
         hid_blocks: The number of hidden transformer blocks.
         attention_heads: The number of attention heads :math:`H`.
-        dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions :math:`N`.
         patch_size: The path size.
         window_size: The local attention window size.
         rope: Whether to use rotary positional embedding (RoPE) or not.
+        dropout: The dropout rate in :math:`[0, 1]`.
         kwargs: Keyword arguments passed to :class:`DiTBlock`.
     """
 
@@ -138,11 +144,11 @@ class DiT(nn.Module):
         hid_channels: int = 1024,
         hid_blocks: int = 3,
         attention_heads: int = 1,
-        dropout: Optional[float] = None,
         spatial: int = 2,
         patch_size: Union[int, Sequence[int]] = 4,
-        window_size: Optional[Sequence[int]] = None,
+        window_size: Union[int, Sequence[int], None] = None,
         rope: bool = True,
+        dropout: Optional[float] = None,
         **kwargs,
     ):
         super().__init__()
@@ -193,7 +199,13 @@ class DiT(nn.Module):
         ])
 
         self.spatial = spatial
-        self.window_size = window_size
+
+        if window_size is None:
+            self.window_size = None
+        elif isinstance(window_size, int):
+            self.window_size = (window_size,) * spatial
+        else:
+            self.window_size = tuple(window_size)
 
     @staticmethod
     @functools.cache
@@ -229,12 +241,12 @@ class DiT(nn.Module):
     def forward(self, x: Tensor, mod: Tensor, early_out: Optional[int] = None) -> Tensor:
         r"""
         Arguments:
-            x: The input tensor, with shape :math:`(B, C_i, H_1, ..., H_N)`.
+            x: The input tensor, with shape :math:`(B, C_i, L_1, ..., L_N)`.
             mod: The modulation vector, with shape :math:`(D)` or :math:`(B, D)`.
             early_out: The number of blocks after which the output is returned.
 
         Returns:
-            The output tensor, with shape :math:`(B, C_o, H_1, ..., H_N)`.
+            The output tensor, with shape :math:`(B, C_o, L_1, ..., L_N)`.
         """
 
         x = self.patch(x)
@@ -244,7 +256,7 @@ class DiT(nn.Module):
         indices, mask = self.indices_and_mask(
             shape,
             spatial=self.spatial,
-            window_size=None if self.window_size is None else tuple(self.window_size),
+            window_size=self.window_size,
             dtype=x.dtype,
             device=x.device,
         )
@@ -256,6 +268,244 @@ class DiT(nn.Module):
             x = block(x, mod, indices=indices, mask=mask)
 
         x = torch.unflatten(x, sizes=shape, dim=-2)
+
+        x = self.out_proj(x)
+        x = self.unpatch(x)
+
+        return x
+
+
+class DiNATBlock(nn.Module):
+    r"""Creates a DiT block module with neighborhood attention.
+
+    Arguments:
+        channels: The number of channels :math:`C`.
+        mod_features: The number of modulating features :math:`D`.
+        spatial: The number of spatial dimensinons :math:`N`.
+        window_size: The local attention window size.
+        rope: Whether to use rotary positional embedding (RoPE) or not.
+        dropout: The dropout rate in :math:`[0, 1]`.
+        kwargs: Keyword arguments passed to :class:`MultiheadSelfAttention`.
+    """
+
+    def __init__(
+        self,
+        channels: int,
+        mod_features: int,
+        spatial: int = 2,
+        window_size: Union[int, Sequence[int]] = 5,
+        rope: bool = True,
+        dropout: Optional[float] = None,
+        **kwargs,
+    ):
+        super().__init__()
+
+        # Ada-LN Zero
+        self.norm = nn.LayerNorm(channels, elementwise_affine=False)
+        self.ada_zero = nn.Sequential(
+            nn.Linear(mod_features, channels),
+            nn.SiLU(),
+            nn.Linear(channels, 6 * channels),
+            Rearrange("... (n C) -> n ..." + " 1" * spatial + " C", n=6),
+        )
+
+        layer = self.ada_zero[-2]
+        layer.weight = nn.Parameter(layer.weight.detach() * 1e-2)
+
+        ## MNA
+        self.mna = MultiheadNeighborhoodAttention(
+            channels,
+            spatial=spatial,
+            window_size=window_size,
+            **kwargs,
+        )
+
+        ## RoPE
+        if rope:
+            amplitude = 1e4 ** -torch.rand(channels // 2)
+            direction = torch.nn.functional.normalize(torch.randn(spatial, channels // 2), dim=0)
+
+            self.theta = nn.Parameter(amplitude * direction)
+        else:
+            self.theta = None
+
+        # MLP
+        self.mlp = nn.Sequential(
+            Rearrange("B ... C -> B C ..."),
+            ConvNd(
+                channels,
+                4 * channels,
+                kernel_size=3,
+                padding=1,
+                spatial=spatial,
+            ),
+            Rearrange("B C ... -> B ... C"),
+            nn.SiLU(),
+            nn.Identity() if dropout is None else nn.Dropout(dropout),
+            nn.Linear(4 * channels, channels),
+        )
+
+    def forward(
+        self,
+        x: Tensor,
+        mod: Tensor,
+        indices: Optional[Tensor] = None,
+    ) -> Tensor:
+        r"""
+        Arguments:
+            x: The input tokens :math:`x`, with shape :math:`(*, L_1, ..., L_N, C)`.
+            mod: The modulation vector, with shape :math:`(D)` or :math:`(*, D)`.
+            indices: The postition indices, with shape :math:`(L_1, ..., L_N, N)`.
+
+        Returns:
+            The ouput tokens :math:`y`, with shape :math:`(*, L_1, ..., L_N, C)`.
+        """
+
+        if indices is None or self.theta is None:
+            theta = None
+        else:
+            theta = torch.einsum("...ij,jk", indices, self.theta)
+
+        a1, b1, c1, a2, b2, c2 = self.ada_zero(mod)
+
+        y = (a1 + 1) * self.norm(x) + b1
+        y = self.mna(y, theta)
+        y = (x + c1 * y) * torch.rsqrt(1 + c1 * c1)
+
+        y = (a2 + 1) * self.norm(y) + b2
+        y = self.mlp(y)
+        y = (x + c2 * y) * torch.rsqrt(1 + c2 * c2)
+
+        return y
+
+
+class DiNAT(nn.Module):
+    r"""Creates a modulated DiT-like module with neighborhood attention.
+
+    Arguments:
+        in_channels: The number of input channels :math:`C_i`.
+        out_channels: The number of output channels :math:`C_o`.
+        mod_features: The number of modulating features :math:`D`.
+        hid_channels: The numbers of hidden token channels.
+        hid_blocks: The number of hidden transformer blocks.
+        attention_heads: The number of attention heads :math:`H`.
+        spatial: The number of spatial dimensions :math:`N`.
+        patch_size: The path size.
+        window_size: The local attention window size.
+        rope: Whether to use rotary positional embedding (RoPE) or not.
+        dropout: The dropout rate in :math:`[0, 1]`.
+        kwargs: Keyword arguments passed to :class:`DiTBlock`.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        mod_features: int,
+        hid_channels: int = 1024,
+        hid_blocks: int = 3,
+        attention_heads: int = 1,
+        spatial: int = 2,
+        patch_size: Union[int, Sequence[int]] = 4,
+        window_size: Union[int, Sequence[int]] = 5,
+        rope: bool = True,
+        dropout: Optional[float] = None,
+        **kwargs,
+    ):
+        super().__init__()
+
+        kwargs.update(
+            attention_heads=attention_heads,
+            dropout=dropout,
+            rope=rope,
+        )
+
+        if isinstance(patch_size, int):
+            patch_size = [patch_size] * spatial
+
+        if spatial == 1:
+            (l,) = patch_size
+            self.patch = Rearrange("... C (L l) -> ... L (C l)", l=l)
+            self.unpatch = Rearrange("... L (C l) -> ... C (L l)", l=l)
+        elif spatial == 2:
+            h, w = patch_size
+            self.patch = Rearrange("... C (H h) (W w) -> ... H W (C h w)", h=h, w=w)
+            self.unpatch = Rearrange("... H W (C h w) -> ... C (H h) (W w)", h=h, w=w)
+        elif spatial == 3:
+            l, h, w = patch_size
+            self.patch = Rearrange("... C (L l) (H h) (W w) -> ... L H W (C l h w)", l=l, h=h, w=w)
+            self.unpatch = Rearrange(
+                "... L H W (C l h w) -> ... C (L l) (H h) (W w)", l=l, h=h, w=w
+            )
+        else:
+            raise NotImplementedError()
+
+        self.in_proj = nn.Linear(math.prod(patch_size) * in_channels, hid_channels)
+        self.out_proj = nn.Linear(hid_channels, math.prod(patch_size) * out_channels)
+
+        self.positional_embedding = nn.Sequential(
+            nn.Linear(spatial, hid_channels),
+            nn.SiLU(),
+            nn.Linear(hid_channels, hid_channels),
+        )
+
+        self.blocks = nn.ModuleList([
+            DiNATBlock(
+                channels=hid_channels,
+                mod_features=mod_features,
+                spatial=spatial,
+                window_size=window_size,
+                **kwargs,
+            )
+            for _ in range(hid_blocks)
+        ])
+
+        self.spatial = spatial
+
+    @staticmethod
+    @functools.cache
+    def indices(
+        shape: Sequence[int],
+        spatial: int,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> Tensor:
+        r"""Returns the token indices and attention mask for a given input shape and window size."""
+
+        assert isinstance(shape, Hashable)
+
+        indices = (torch.arange(size, device=device) for size in shape)
+        indices = torch.cartesian_prod(*indices)
+        indices = torch.reshape(indices, shape=(*shape, spatial))
+
+        return indices.to(dtype=dtype)
+
+    def forward(self, x: Tensor, mod: Tensor, early_out: Optional[int] = None) -> Tensor:
+        r"""
+        Arguments:
+            x: The input tensor, with shape :math:`(B, C_i, L_1, ..., L_N)`.
+            mod: The modulation vector, with shape :math:`(D)` or :math:`(B, D)`.
+            early_out: The number of blocks after which the output is returned.
+
+        Returns:
+            The output tensor, with shape :math:`(B, C_o, L_1, ..., L_N)`.
+        """
+
+        x = self.patch(x)
+        x = self.in_proj(x)
+
+        shape = x.shape[-self.spatial - 1 : -1]
+        indices = self.indices(
+            shape,
+            spatial=self.spatial,
+            dtype=x.dtype,
+            device=x.device,
+        )
+
+        x = x + self.positional_embedding(indices / indices.new_tensor(shape))
+
+        for block in itertools.islice(self.blocks, early_out):
+            x = block(x, mod, indices=indices)
 
         x = self.out_proj(x)
         x = self.unpatch(x)

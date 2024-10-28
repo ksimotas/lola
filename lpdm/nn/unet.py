@@ -32,8 +32,8 @@ class UNetBlock(nn.Module):
         mod_features: The number of modulating features :math:`D`.
         groups: The number of groups in :class:`torch.nn.GroupNorm` layers.
         attention_heads: The number of attention heads.
-        dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions :math:`N`.
+        dropout: The dropout rate in :math:`[0, 1]`.
         kwargs: Keyword arguments passed to :class:`torch.nn.Conv2d`.
     """
 
@@ -43,8 +43,8 @@ class UNetBlock(nn.Module):
         mod_features: int,
         groups: int = 16,
         attention_heads: Optional[int] = None,
-        dropout: Optional[float] = None,
         spatial: int = 2,
+        dropout: Optional[float] = None,
         **kwargs,
     ):
         super().__init__()
@@ -84,11 +84,11 @@ class UNetBlock(nn.Module):
     def forward(self, x: Tensor, mod: Tensor) -> Tensor:
         r"""
         Arguments:
-            x: The input tensor, with shape :math:`(B, C, H_1, ..., H_N)`.
+            x: The input tensor, with shape :math:`(B, C, L_1, ..., L_N)`.
             mod: The modulation vector, with shape :math:`(D)` or :math:`(B, D)`.
 
         Returns:
-            The output tensor, with shape :math:`(B, C, H_1, ..., H_N)`.
+            The output tensor, with shape :math:`(B, C, L_1, ..., L_N)`.
         """
 
         a, b, c = self.ada_zero(mod)
@@ -113,9 +113,9 @@ class UNet(nn.Module):
         kernel_size: The kernel size of all convolutions.
         stride: The stride of the downsampling convolutions.
         attention_heads: The number of attention heads at each depth.
-        dropout: The dropout rate in :math:`[0, 1]`.
         spatial: The number of spatial dimensions :math:`N`.
         periodic: Whether the spatial dimensions are periodic or not.
+        dropout: The dropout rate in :math:`[0, 1]`.
     """
 
     def __init__(
@@ -128,9 +128,9 @@ class UNet(nn.Module):
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
         attention_heads: Dict[int, int] = {},  # noqa: B006
-        dropout: Optional[float] = None,
         spatial: int = 2,
         periodic: bool = False,
+        dropout: Optional[float] = None,
     ):
         super().__init__()
 
@@ -210,11 +210,11 @@ class UNet(nn.Module):
     def forward(self, x: Tensor, mod: Tensor) -> Tensor:
         r"""
         Arguments:
-            x: The input tensor, with shape :math:`(B, C_i, H_1, ..., H_N)`.
+            x: The input tensor, with shape :math:`(B, C_i, L_1, ..., L_N)`.
             mod: The modulation vector, with shape :math:`(D)` or :math:`(B, D)`.
 
         Returns:
-            The output tensor, with shape :math:`(B, C_o, H_1, ..., H_N)`.
+            The output tensor, with shape :math:`(B, C_o, L_1, ..., L_N)`.
         """
 
         memory = []

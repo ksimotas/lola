@@ -22,6 +22,7 @@ all = [
   "ipykernel==6.29.5",
   "ipywidgets==8.1.5",
   "matplotlib==3.9.0",
+  "natten==0.17.2+torch250cu121 @ https://shi-labs.com/natten/wheels",
   "pre-commit==3.8.0",
   "pytest==8.3.2",
   "ruff==0.6.4",

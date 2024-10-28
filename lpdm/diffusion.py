@@ -19,7 +19,7 @@ from torch.distributions import Beta, Distribution, Kumaraswamy
 from torch.nn.parallel import DistributedDataParallel
 from typing import Dict, Optional, Sequence, Tuple, Union
 
-from .nn.dit import DiT
+from .nn.dit import DiNAT, DiT
 from .nn.embedding import SineEncoding
 from .nn.unet import UNet
 
@@ -213,6 +213,7 @@ def get_denoiser(
     patch_size: Union[int, Sequence[int]] = 4,
     window_size: Optional[Sequence[int]] = None,
     rope: bool = True,
+    natten: bool = False,
     # UNet
     kernel_size: Union[int, Sequence[int]] = 3,
     stride: Union[int, Sequence[int]] = 2,
@@ -227,7 +228,7 @@ def get_denoiser(
     channels, *_ = shape
 
     if arch == "dit":
-        backbone = DiT(
+        backbone = (DiNAT if natten else DiT)(
             in_channels=channels,
             out_channels=2 * channels if improved else channels,
             mod_features=emb_features,
@@ -235,11 +236,11 @@ def get_denoiser(
             hid_blocks=hid_blocks,
             attention_heads=attention_heads,
             qk_norm=qk_norm,
-            dropout=dropout,
             spatial=len(shape) - 1,
             patch_size=patch_size,
             window_size=window_size,
             rope=rope,
+            dropout=dropout,
         )
     elif arch == "unet":
         backbone = UNet(
@@ -251,8 +252,8 @@ def get_denoiser(
             kernel_size=kernel_size,
             stride=stride,
             attention_heads=attention_heads,
-            dropout=dropout,
             spatial=len(shape) - 1,
+            dropout=dropout,
         )
     else:
         raise NotImplementedError()
