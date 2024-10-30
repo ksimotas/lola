@@ -323,7 +323,7 @@ if __name__ == "__main__":
             ram=args.ram,
             time=args.time,
             partition="gpuxl" if args.gpuxl else "gpu",
-            constraint="h100",
+            constraint="h100|a100-80gb",
             exclude="workergpu166",
         ),
         name=f"training denoiser {runid}",
