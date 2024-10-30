@@ -37,11 +37,6 @@ def cache_latent(
 
     cache_path = runpath / "cache" / physics / split / file
 
-    if cache_path.exists():
-        return
-    else:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-
     # Data
     dataset = get_well_dataset(
         path=os.path.join(datasets, physics),
@@ -52,7 +47,7 @@ def cache_latent(
     dataset = get_well_dataset(
         path=os.path.join(datasets, physics),
         split=split,
-        steps=dataset.metadata.n_steps_per_simulation[0],
+        steps=dataset.metadata.n_steps_per_trajectory[0],
         include_filters=[file],
     )
 
@@ -74,6 +69,11 @@ def cache_latent(
     autoencoder.eval()
 
     # Encode
+    if cache_path.exists():
+        return
+    else:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+
     with h5py.File(cache_path, mode="x") as f:
         for i in trange(len(dataset), ncols=88, ascii=True):
             batch = dataset[i]
@@ -136,7 +136,7 @@ if __name__ == "__main__":
             ram="64GB",
             time="01:00:00",
             partition="gpu",
-            constraint="h100",
+            constraint="h100|a100",
         ),
         name=f"caching {args.physics}/{args.split}",
         backend="slurm",
