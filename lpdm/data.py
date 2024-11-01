@@ -3,7 +3,10 @@ r"""Data and datasets helpers."""
 __all__ = [
     "field_preprocess",
     "field_postprocess",
+    "find_hdf5",
     "get_well_dataset",
+    "get_dataloader",
+    "infinite_cycle",
     "isotropic_power_spectrum",
     "LazyShuffleDataset",
     "MiniWellDataset",
@@ -11,6 +14,7 @@ __all__ = [
 
 import glob
 import h5py
+import itertools
 import math
 import numpy as np
 import os
@@ -25,7 +29,7 @@ from torch.utils.data import (
     DistributedSampler,
     IterableDataset,
 )
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, Union
 
 try:
     from the_well.benchmark.data.augmentation import (
@@ -130,7 +134,7 @@ def find_hdf5(
     return files
 
 
-def get_augmentation(*names: str) -> Augmentation:
+def compose_augmentation(*names: str) -> Augmentation:
     augmentations = []
 
     for name in names:
@@ -178,7 +182,7 @@ def get_well_dataset(
         raise NotADirectoryError(f"{os.path.join(path, split)} does not exist.")
 
     if augment:
-        augmentation = get_augmentation(*augment)
+        augmentation = compose_augmentation(*augment)
     else:
         augmentation = None
 
@@ -198,13 +202,14 @@ def get_dataloader(
     dataset: Dataset,
     batch_size: int,
     shuffle: Union[bool, str] = False,
+    infinite: bool = False,
     num_workers: int = 1,
     persistent_workers: bool = True,
     pin_memory: bool = True,
     rank: Optional[int] = None,
     world_size: Optional[int] = None,
     seed: int = 0,
-) -> Tuple[DataLoader, DistributedSampler]:
+) -> DataLoader:
     r"""Instantiates a (distributed) data loader."""
 
     if shuffle == "lazy":
@@ -244,7 +249,20 @@ def get_dataloader(
         pin_memory=pin_memory,
     )
 
-    return loader, sampler
+    if infinite:
+        return infinite_cycle(loader)
+    else:
+        return loader
+
+
+def infinite_cycle(loader: DataLoader) -> Iterator[Any]:
+    r"""Creates an infinite iterator over a data loader."""
+
+    for epoch in itertools.count():
+        if isinstance(loader.sampler, DistributedSampler):
+            loader.sampler.set_epoch(epoch)
+
+        yield from loader
 
 
 def isotropic_power_spectrum(

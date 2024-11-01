@@ -22,7 +22,6 @@ def train(
 
     from einops import rearrange
     from functools import partial
-    from itertools import islice
     from omegaconf import OmegaConf, open_dict
     from pathlib import Path
     from torch.nn.parallel import DistributedDataParallel
@@ -46,6 +45,9 @@ def train(
     torch.cuda.set_device(device)
 
     # Config
+    assert cfg.train.batch_size % world_size == 0
+    assert cfg.train.epoch_size % (cfg.train.batch_size * cfg.train.accumulation) == 0
+
     runname = f"{cfg.ae.name}_{cfg.optim.name}"
 
     runpath = Path(f"~/ceph/mpp-ldm/runs/{runid}_{runname}")
@@ -68,10 +70,11 @@ def train(
         augment=cfg.dataset.augment,
     )
 
-    train_loader, train_sampler = get_dataloader(
+    train_loader = get_dataloader(
         dataset=trainset,
-        batch_size=cfg.train.batch_size,
+        batch_size=cfg.train.batch_size // world_size,
         shuffle="lazy" if cfg.train.lazy_shuffle else True,
+        infinite=True,
         num_workers=process_cpu_count() // world_size,
         rank=rank,
         world_size=world_size,
@@ -86,10 +89,11 @@ def train(
         augment=cfg.dataset.augment,
     )
 
-    valid_loader, valid_sampler = get_dataloader(
+    valid_loader = get_dataloader(
         dataset=validset,
-        batch_size=cfg.train.batch_size,
+        batch_size=cfg.train.batch_size // world_size,
         shuffle=False,
+        infinite=True,
         num_workers=process_cpu_count() // world_size,
         rank=rank,
         world_size=world_size,
@@ -107,7 +111,7 @@ def train(
     autoencoder = AutoEncoder(
         pix_channels=trainset.metadata.n_fields,
         **cfg.ae,
-    )
+    ).to(device)
 
     autoencoder_loss = WeightedLoss(**cfg.ae.loss).to(device)
 
@@ -115,7 +119,7 @@ def train(
         autoencoder.load_state_dict(torch.load(cfg.boot_state, weights_only=True))
 
     autoencoder = DistributedDataParallel(
-        module=autoencoder.to(device),
+        module=autoencoder,
         device_ids=[device_id],
     )
 
@@ -135,32 +139,28 @@ def train(
         )
 
     # Training loop
-    steps = cfg.train.epoch_size // cfg.train.batch_size // world_size
-    steps = steps + (-steps) % cfg.train.accumulation
-
     if rank == 0:
         epochs = trange(cfg.train.epochs, ncols=88, ascii=True)
     else:
         epochs = range(cfg.train.epochs)
 
-    for epoch in epochs:
-        if train_sampler:
-            train_sampler.set_epoch(epoch)
-        if valid_sampler:
-            valid_sampler.set_epoch(epoch)
+    steps_per_epoch = cfg.train.epoch_size // cfg.train.batch_size // cfg.train.accumulation
 
+    for epoch in epochs:
         ## Train
         autoencoder.train()
 
         losses, grads = [], []
 
-        for step, batch in islice(enumerate(train_loader), steps):
+        for i in range(cfg.train.epoch_size // cfg.train.batch_size):
+            batch = next(train_loader)
+
             x = batch["input_fields"]
             x = x.to(device, non_blocking=True)
             x = preprocess(x)
             x = rearrange(x, "B 1 H W C -> B C H W")
 
-            if (step + 1) % cfg.train.accumulation == 0:
+            if (i + 1) % cfg.train.accumulation == 0:
                 y, z = autoencoder(x)
                 loss = autoencoder_loss(x, y)
                 loss.backward()
@@ -198,6 +198,8 @@ def train(
             logs["train/grad_norm/mean"] = grads.mean().item()
             logs["train/grad_norm/std"] = grads.std().item()
             logs["train/learning_rate"] = optimizer.param_groups[0]["lr"]
+            logs["train/update_steps"] = (epoch + 1) * steps_per_epoch
+            logs["train/samples"] = (epoch + 1) * cfg.train.epoch_size
 
         del losses, losses_list, grads, grads_list
 
@@ -207,7 +209,9 @@ def train(
         losses = []
 
         with torch.no_grad():
-            for batch in islice(valid_loader, steps):
+            for _ in range(cfg.train.epoch_size // cfg.train.batch_size):
+                batch = next(valid_loader)
+
                 x = batch["input_fields"]
                 x = x.to(device, non_blocking=True)
                 x = preprocess(x)
@@ -227,7 +231,7 @@ def train(
         dist.gather(losses, losses_list, dst=0)
 
         if rank == 0:
-            losses = torch.stack(losses_list).cpu()
+            losses = torch.cat(losses_list).cpu()
 
             logs["valid/loss/mean"] = losses.mean().item()
             logs["valid/loss/std"] = losses.std().item()
@@ -264,7 +268,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("overrides", nargs="*", type=str)
     parser.add_argument("--cpus-per-gpu", type=int, default=8)
-    parser.add_argument("--gpus", type=int, default=8)
+    parser.add_argument("--gpus", type=int, default=4)
     parser.add_argument("--gpuxl", action="store_true", default=False)
     parser.add_argument("--ram", type=str, default="256GB")
     parser.add_argument("--time", type=str, default="7-00:00:00")

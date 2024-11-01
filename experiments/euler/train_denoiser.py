@@ -17,7 +17,6 @@ def train(runid: str, cfg: DictConfig):
     import wandb
 
     from einops import rearrange
-    from itertools import islice
     from omegaconf import OmegaConf, open_dict
     from pathlib import Path
     from torch.nn.parallel import DistributedDataParallel
@@ -40,6 +39,9 @@ def train(runid: str, cfg: DictConfig):
     torch.cuda.set_device(device)
 
     # Config
+    assert cfg.train.batch_size % world_size == 0
+    assert cfg.train.epoch_size % (cfg.train.batch_size * cfg.train.accumulation) == 0
+
     runname = f"{cfg.denoiser.name}_{cfg.optim.name}"
 
     runpath = Path(f"~/ceph/mpp-ldm/runs/{runid}_{runname}")
@@ -86,10 +88,11 @@ def train(runid: str, cfg: DictConfig):
         stride=cfg.trajectory.stride,
     )
 
-    train_loader, train_sampler = get_dataloader(
+    train_loader = get_dataloader(
         dataset=trainset,
-        batch_size=cfg.train.batch_size,
+        batch_size=cfg.train.batch_size // world_size,
         shuffle=True,
+        infinite=True,
         num_workers=process_cpu_count() // world_size,
         rank=rank,
         world_size=world_size,
@@ -106,10 +109,11 @@ def train(runid: str, cfg: DictConfig):
         stride=cfg.trajectory.stride,
     )
 
-    valid_loader, valid_sampler = get_dataloader(
+    valid_loader = get_dataloader(
         dataset=validset,
-        batch_size=cfg.train.batch_size,
+        batch_size=cfg.train.batch_size // world_size,
         shuffle=True,
+        infinite=True,
         num_workers=process_cpu_count() // world_size,
         rank=rank,
         world_size=world_size,
@@ -124,7 +128,7 @@ def train(runid: str, cfg: DictConfig):
         shape=item["state"].shape,
         label_features=item["label"].numel(),
         **cfg.denoiser,
-    )
+    ).to(device)
 
     denoiser_loss = DenoiserLoss(**cfg.denoiser.loss).to(device)
 
@@ -132,7 +136,7 @@ def train(runid: str, cfg: DictConfig):
         denoiser.load_state_dict(torch.load(cfg.boot_state, weights_only=True))
 
     denoiser = DistributedDataParallel(
-        module=denoiser.to(device),
+        module=denoiser,
         device_ids=[device_id],
     )
 
@@ -157,26 +161,23 @@ def train(runid: str, cfg: DictConfig):
         )
 
     # Training loop
-    steps = cfg.train.epoch_size // cfg.train.batch_size // world_size
-    steps = steps + (-steps) % cfg.train.accumulation
-
     if rank == 0:
         epochs = trange(cfg.train.epochs, ncols=88, ascii=True)
     else:
         epochs = range(cfg.train.epochs)
 
+    steps_per_epoch = cfg.train.epoch_size // cfg.train.batch_size // cfg.train.accumulation
     best_valid_loss = float("inf")
 
     for epoch in epochs:
-        train_sampler.set_epoch(epoch)
-        valid_sampler.set_epoch(epoch)
-
         ## Train
         denoiser.train()
 
         losses, grads = [], []
 
-        for step, batch in islice(enumerate(train_loader), steps):
+        for i in range(cfg.train.epoch_size // cfg.train.batch_size):
+            batch = next(train_loader)
+
             z = batch["state"]
             z = z.to(device, non_blocking=True)
             z = rearrange(z, "B L C H W -> B C L H W")
@@ -184,7 +185,7 @@ def train(runid: str, cfg: DictConfig):
             label = batch["label"]
             label = label.to(device, non_blocking=True)
 
-            if (step + 1) % cfg.train.accumulation == 0:
+            if (i + 1) % cfg.train.accumulation == 0:
                 loss = denoiser_loss(denoiser, z, label=label)
                 loss.backward()
 
@@ -222,6 +223,8 @@ def train(runid: str, cfg: DictConfig):
             logs["train/grad_norm/mean"] = grads.mean().item()
             logs["train/grad_norm/std"] = grads.std().item()
             logs["train/learning_rate"] = optimizer.param_groups[0]["lr"]
+            logs["train/update_steps"] = (epoch + 1) * steps_per_epoch
+            logs["train/samples"] = (epoch + 1) * cfg.train.epoch_size
 
         del losses, losses_list, grads, grads_list
 
@@ -231,7 +234,9 @@ def train(runid: str, cfg: DictConfig):
         losses = []
 
         with torch.no_grad():
-            for batch in islice(valid_loader, steps):
+            for _ in range(cfg.train.epoch_size // cfg.train.batch_size):
+                batch = next(valid_loader)
+
                 z = batch["state"]
                 z = z.to(device, non_blocking=True)
                 z = rearrange(z, "B L C H W -> B C L H W")
@@ -252,7 +257,7 @@ def train(runid: str, cfg: DictConfig):
         dist.gather(losses, losses_list, dst=0)
 
         if rank == 0:
-            losses = torch.stack(losses_list).cpu()
+            losses = torch.cat(losses_list).cpu()
 
             logs["valid/loss/mean"] = losses.mean().item()
             logs["valid/loss/std"] = losses.std().item()
@@ -298,7 +303,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("overrides", nargs="*", type=str)
     parser.add_argument("--cpus-per-gpu", type=int, default=8)
-    parser.add_argument("--gpus", type=int, default=8)
+    parser.add_argument("--gpus", type=int, default=4)
     parser.add_argument("--gpuxl", action="store_true", default=False)
     parser.add_argument("--ram", type=str, default="256GB")
     parser.add_argument("--time", type=str, default="7-00:00:00")
