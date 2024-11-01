@@ -35,6 +35,8 @@ except ImportError:
 
 TRANSFORMS = {
     "log": (torch.log, torch.exp),
+    "log1p": (torch.log1p, torch.expm1),
+    "arcsinh": (torch.arcsinh, torch.sinh),
 }
 
 
