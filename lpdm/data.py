@@ -28,6 +28,12 @@ from torch.utils.data import (
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 try:
+    from the_well.benchmark.data.augmentation import (
+        Augmentation,
+        Compose,
+        RandomAxisFlip,
+        RandomAxisPermute,
+    )
     from the_well.benchmark.data.datasets import GenericWellDataset
 except ImportError:
     pass
@@ -124,12 +130,27 @@ def find_hdf5(
     return files
 
 
+def get_augmentation(*names: str) -> Augmentation:
+    augmentations = []
+
+    for name in names:
+        if name == "random_axis_flip":
+            augmentations.append(RandomAxisFlip())
+        elif name == "random_axis_permute":
+            augmentations.append(RandomAxisPermute())
+        else:
+            raise NotImplementedError()
+
+    return Compose(*augmentations)
+
+
 def get_well_dataset(
     path: str,
     split: Optional[str] = None,
     steps: int = 1,
     include_filters: Sequence[str] = (),
     exclude_filters: Sequence[str] = (),
+    augment: Sequence[str] = (),
     **kwargs,
 ) -> GenericWellDataset:
     r"""Instantiates a dataset from the Well.
@@ -156,6 +177,11 @@ def get_well_dataset(
     else:
         raise NotADirectoryError(f"{os.path.join(path, split)} does not exist.")
 
+    if augment:
+        augmentation = get_augmentation(*augment)
+    else:
+        augmentation = None
+
     return GenericWellDataset(
         path=path,
         n_steps_input=steps,
@@ -163,6 +189,7 @@ def get_well_dataset(
         include_filters=include_filters,
         exclude_filters=exclude_filters,
         use_normalization=False,
+        transform=augmentation,
         **kwargs,
     )
 

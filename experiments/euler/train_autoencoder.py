@@ -65,6 +65,7 @@ def train(
         split="train",
         steps=1,
         include_filters=cfg.dataset.include_filters,
+        augment=cfg.dataset.augment,
     )
 
     train_loader, train_sampler = get_dataloader(
@@ -82,6 +83,7 @@ def train(
         split="valid",
         steps=1,
         include_filters=cfg.dataset.include_filters,
+        augment=cfg.dataset.augment,
     )
 
     valid_loader, valid_sampler = get_dataloader(
