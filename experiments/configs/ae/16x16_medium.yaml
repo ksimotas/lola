@@ -4,5 +4,6 @@ lat_channels: 64
 hid_channels: [64, 128, 256, 512, 768, 1024]
 hid_blocks: [1, 2, 3, 3, 3, 3]
 pixel_shuffle: true
+linear_out: true
 attention_heads: {5: 8}
 dropout: 0.01

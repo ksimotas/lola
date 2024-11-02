@@ -117,6 +117,7 @@ class Encoder(nn.Module):
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
         pixel_shuffle: bool = False,
+        linear_out: bool = True,
         attention_heads: Dict[int, int] = {},  # noqa: B006
         spatial: int = 2,
         periodic: bool = False,
@@ -182,7 +183,21 @@ class Encoder(nn.Module):
                 )
 
             if i + 1 == len(hid_blocks):
-                blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
+                if linear_out:
+                    blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
+                else:
+                    blocks.append(
+                        nn.Sequential(
+                            nn.GroupNorm(
+                                num_groups=min(16, hid_channels[i]),
+                                num_channels=hid_channels[i],
+                                affine=False,
+                            ),
+                            ConvNd(hid_channels[i], hid_channels[i], spatial=spatial, **kwargs),
+                            nn.SiLU(),
+                            ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs),
+                        )
+                    )
 
             self.descent.append(blocks)
 
@@ -234,6 +249,7 @@ class Decoder(nn.Module):
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
         pixel_shuffle: bool = False,
+        linear_out: bool = True,
         attention_heads: Dict[int, int] = {},  # noqa: B006
         spatial: int = 2,
         periodic: bool = False,
@@ -301,7 +317,21 @@ class Decoder(nn.Module):
                         )
                     )
             else:
-                blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
+                if linear_out:
+                    blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
+                else:
+                    blocks.append(
+                        nn.Sequential(
+                            nn.GroupNorm(
+                                num_groups=min(16, hid_channels[i]),
+                                num_channels=hid_channels[i],
+                                affine=False,
+                            ),
+                            ConvNd(hid_channels[i], hid_channels[i], spatial=spatial, **kwargs),
+                            nn.SiLU(),
+                            ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs),
+                        )
+                    )
 
             self.ascent.append(blocks)
 
