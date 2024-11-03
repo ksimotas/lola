@@ -52,6 +52,7 @@ def get_optimizer(
     weight_decay: float = 0.0,
     scheduler: Optional[str] = None,
     epochs: Optional[int] = None,
+    warmup: Optional[int] = None,
     # Ignored
     name: str = None,
     grad_clip: float = None,
@@ -65,6 +66,7 @@ def get_optimizer(
         weight_decay: The weight decay.
         scheduler: The scheduler name.
         epochs: The total number of epochs.
+        warmup: The number of warmup epochs.
 
     Returns:
         An optimizer/scheduler pair.
@@ -108,7 +110,12 @@ def get_optimizer(
     else:
         raise NotImplementedError()
 
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    if warmup is None:
+        cold_lr_lambda = lr_lambda
+    else:
+        cold_lr_lambda = lambda t: min(1, (t + 1) / (warmup + 1)) * lr_lambda(t)
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, cold_lr_lambda)
 
     return optimizer, scheduler
 
