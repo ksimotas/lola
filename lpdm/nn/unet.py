@@ -16,7 +16,7 @@ from einops.layers.torch import Rearrange
 from torch import Tensor
 from typing import Dict, Optional, Sequence, Union
 
-from .layers import ConvNd, SelfAttentionNd
+from .layers import ConvNd, LayerNorm, SelfAttentionNd
 
 
 class Residual(nn.Sequential):
@@ -30,6 +30,7 @@ class UNetBlock(nn.Module):
     Arguments:
         channels: The number of channels :math:`C`.
         mod_features: The number of modulating features :math:`D`.
+        norm: The kind of normalization.
         groups: The number of groups in :class:`torch.nn.GroupNorm` layers.
         attention_heads: The number of attention heads.
         spatial: The number of spatial dimensions :math:`N`.
@@ -41,6 +42,7 @@ class UNetBlock(nn.Module):
         self,
         channels: int,
         mod_features: int,
+        norm: str = "group",
         groups: int = 16,
         attention_heads: Optional[int] = None,
         spatial: int = 2,
@@ -57,12 +59,18 @@ class UNetBlock(nn.Module):
                 SelfAttentionNd(channels, heads=attention_heads),
             )
 
-        # Ada-GN Zero
-        self.norm = nn.GroupNorm(
-            num_groups=min(groups, channels),
-            num_channels=channels,
-            affine=False,
-        )
+        # Ada-Norm Zero
+        if norm == "group":
+            self.norm = nn.GroupNorm(
+                num_groups=min(groups, channels),
+                num_channels=channels,
+                affine=False,
+            )
+        elif norm == "layer":
+            self.norm = LayerNorm(dim=-spatial - 1)
+        else:
+            raise NotImplementedError()
+
         self.ada_zero = nn.Sequential(
             nn.Linear(mod_features, max(mod_features, channels)),
             nn.SiLU(),
@@ -112,6 +120,7 @@ class UNet(nn.Module):
         hid_blocks: The numbers of hidden blocks at each depth.
         kernel_size: The kernel size of all convolutions.
         stride: The stride of the downsampling convolutions.
+        norm: The kind of normalization.
         attention_heads: The number of attention heads at each depth.
         spatial: The number of spatial dimensions :math:`N`.
         periodic: Whether the spatial dimensions are periodic or not.
@@ -127,6 +136,7 @@ class UNet(nn.Module):
         hid_blocks: Sequence[int] = (3, 3, 3),
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
+        norm: str = "group",
         attention_heads: Dict[int, int] = {},  # noqa: B006
         spatial: int = 2,
         periodic: bool = False,
@@ -158,6 +168,7 @@ class UNet(nn.Module):
                     UNetBlock(
                         hid_channels[i],
                         mod_features,
+                        norm=norm,
                         attention_heads=attention_heads.get(i, None),
                         dropout=dropout,
                         spatial=spatial,
@@ -169,6 +180,7 @@ class UNet(nn.Module):
                     UNetBlock(
                         hid_channels[i],
                         mod_features,
+                        norm=norm,
                         attention_heads=attention_heads.get(i, None),
                         dropout=dropout,
                         spatial=spatial,

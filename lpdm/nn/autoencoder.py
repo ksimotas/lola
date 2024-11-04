@@ -18,6 +18,7 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 
 from .layers import (
     ConvNd,
+    LayerNorm,
     Patchify,
     SelfAttentionNd,
     Unpatchify,
@@ -34,6 +35,7 @@ class ResBlock(nn.Module):
 
     Arguments:
         channels: The number of channels :math:`C`.
+        norm: The kind of normalization.
         groups: The number of groups in :class:`torch.nn.GroupNorm` layers.
         attention_heads: The number of attention heads.
         spatial: The number of spatial dimensions :math:`N`.
@@ -44,6 +46,7 @@ class ResBlock(nn.Module):
     def __init__(
         self,
         channels: int,
+        norm: str = "group",
         groups: int = 16,
         attention_heads: Optional[int] = None,
         spatial: int = 2,
@@ -62,16 +65,25 @@ class ResBlock(nn.Module):
 
         # Block
         self.block = nn.Sequential(
-            nn.GroupNorm(
-                num_groups=min(groups, channels),
-                num_channels=channels,
-                affine=False,
-            ),
             ConvNd(channels, channels, spatial=spatial, **kwargs),
             nn.SiLU(),
             nn.Identity() if dropout is None else nn.Dropout(dropout),
             ConvNd(channels, channels, spatial=spatial, **kwargs),
         )
+
+        if norm == "group":
+            self.block.insert(
+                0,
+                nn.GroupNorm(
+                    num_groups=min(groups, channels),
+                    num_channels=channels,
+                    affine=False,
+                ),
+            )
+        elif norm == "layer":
+            self.block.insert(0, LayerNorm(dim=-spatial - 1))
+        else:
+            raise NotImplementedError()
 
         self.register_buffer("out_scale", torch.as_tensor(math.sqrt(1 / 2)))
 
@@ -101,6 +113,7 @@ class Encoder(nn.Module):
         kernel_size: The kernel size of all convolutions.
         stride: The stride of the downsampling convolutions.
         pixel_shuffle: Whether to use pixel shuffling or not.
+        norm: The kind of normalization.
         attention_heads: The number of attention heads at each depth.
         spatial: The number of spatial dimensions.
         periodic: Whether the spatial dimensions are periodic or not.
@@ -118,6 +131,7 @@ class Encoder(nn.Module):
         stride: Union[int, Sequence[int]] = 2,
         pixel_shuffle: bool = False,
         linear_out: bool = True,
+        norm: str = "group",
         attention_heads: Dict[int, int] = {},  # noqa: B006
         spatial: int = 2,
         periodic: bool = False,
@@ -176,6 +190,7 @@ class Encoder(nn.Module):
                 blocks.append(
                     ResBlock(
                         hid_channels[i],
+                        norm=norm,
                         attention_heads=attention_heads.get(i, None),
                         dropout=dropout,
                         spatial=spatial,
@@ -220,6 +235,7 @@ class Decoder(nn.Module):
         kernel_size: The kernel size of all convolutions.
         stride: The stride of the downsampling convolutions.
         pixel_shuffle: Whether to use pixel shuffling or not.
+        norm: The kind of normalization.
         attention_heads: The number of attention heads at each depth.
         spatial: The number of spatial dimensions.
         periodic: Whether the spatial dimensions are periodic or not.
@@ -237,6 +253,7 @@ class Decoder(nn.Module):
         stride: Union[int, Sequence[int]] = 2,
         pixel_shuffle: bool = False,
         linear_out: bool = True,
+        norm: str = "group",
         attention_heads: Dict[int, int] = {},  # noqa: B006
         spatial: int = 2,
         periodic: bool = False,
@@ -272,6 +289,7 @@ class Decoder(nn.Module):
                 blocks.append(
                     ResBlock(
                         hid_channels[i],
+                        norm=norm,
                         attention_heads=attention_heads.get(i, None),
                         spatial=spatial,
                         dropout=dropout,
