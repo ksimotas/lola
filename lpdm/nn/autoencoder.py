@@ -127,6 +127,7 @@ class Encoder(nn.Module):
         super().__init__()
 
         assert len(hid_blocks) == len(hid_channels)
+        assert linear_out, "non-linear output projection is not supported"
 
         if isinstance(kernel_size, int):
             kernel_size = [kernel_size] * spatial
@@ -183,21 +184,7 @@ class Encoder(nn.Module):
                 )
 
             if i + 1 == len(hid_blocks):
-                if linear_out:
-                    blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
-                else:
-                    blocks.append(
-                        nn.Sequential(
-                            nn.GroupNorm(
-                                num_groups=min(16, hid_channels[i]),
-                                num_channels=hid_channels[i],
-                                affine=False,
-                            ),
-                            ConvNd(hid_channels[i], hid_channels[i], spatial=spatial, **kwargs),
-                            nn.SiLU(),
-                            ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs),
-                        )
-                    )
+                blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
 
             self.descent.append(blocks)
 
@@ -259,6 +246,7 @@ class Decoder(nn.Module):
         super().__init__()
 
         assert len(hid_blocks) == len(hid_channels)
+        assert linear_out, "non-linear output projection is not supported"
 
         if isinstance(kernel_size, int):
             kernel_size = [kernel_size] * spatial
@@ -317,21 +305,7 @@ class Decoder(nn.Module):
                         )
                     )
             else:
-                if linear_out:
-                    blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
-                else:
-                    blocks.append(
-                        nn.Sequential(
-                            nn.GroupNorm(
-                                num_groups=min(16, hid_channels[i]),
-                                num_channels=hid_channels[i],
-                                affine=False,
-                            ),
-                            ConvNd(hid_channels[i], hid_channels[i], spatial=spatial, **kwargs),
-                            nn.SiLU(),
-                            ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs),
-                        )
-                    )
+                blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
 
             self.ascent.append(blocks)
 
