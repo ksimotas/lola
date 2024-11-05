@@ -2,7 +2,7 @@ defaults:
   - ae: 64x64_medium
   - ae/loss: mae
   - dataset: euler_open
-  - optim: adamw
+  - optim: soap
 
 train:
   epochs: 256

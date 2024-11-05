@@ -13,6 +13,8 @@ import torch.nn as nn
 from torch import Tensor
 from typing import Iterable, Optional, Tuple
 
+from .soap import SOAP
+
 
 class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
     r"""Creates an exponential moving average (EMA) module.
@@ -53,6 +55,9 @@ def get_optimizer(
     scheduler: Optional[str] = None,
     epochs: Optional[int] = None,
     warmup: Optional[int] = None,
+    # Shampoo & SOAP
+    precondition_frequency: int = 16,
+    percondition_dim: int = 4096,
     # Ignored
     name: str = None,
     grad_clip: float = None,
@@ -88,13 +93,21 @@ def get_optimizer(
             betas=(0.9, 0.999),
             epsilon=1e-12,
             weight_decay=weight_decay,
-            max_preconditioner_dim=1024,
-            precondition_frequency=100,
             use_decoupled_weight_decay=True,
+            precondition_frequency=precondition_frequency,
+            max_preconditioner_dim=percondition_dim,
             grafting_config=AdamGraftingConfig(
                 beta2=0.999,
                 epsilon=1e-08,
             ),
+        )
+    elif optimizer == "soap":
+        optimizer = SOAP(
+            params,
+            lr=learning_rate,
+            weight_decay=weight_decay,
+            precondition_frequency=precondition_frequency,
+            max_precond_dim=percondition_dim,
         )
     else:
         raise NotImplementedError()
