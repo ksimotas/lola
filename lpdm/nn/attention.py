@@ -2,7 +2,6 @@ r"""Attention layers."""
 
 __all__ = [
     "MultiheadSelfAttention",
-    "MultiheadNeighborhoodAttention",
 ]
 
 import torch
@@ -13,15 +12,7 @@ import xformers.sparse as xfs
 from einops import rearrange
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
-from typing import Callable, Optional, Sequence, Tuple, Union
-
-# fmt: off
-try:
-    import natten
-    natten.use_fused_na(mode=True, kv_parallel=True)
-except ImportError:
-    pass
-# fmt: on
+from typing import Optional, Tuple, Union
 
 
 class MultiheadSelfAttention(nn.Module):
@@ -120,104 +111,6 @@ class MultiheadSelfAttention(nn.Module):
             return checkpoint(self._forward, x, theta, mask, use_reentrant=False)
         else:
             return self._forward(x, theta, mask)
-
-
-class MultiheadNeighborhoodAttention(nn.Module):
-    r"""Creates a multi-head neighborhood-attention layer.
-
-    Arguments:
-        channels: The number of channels :math:`H \times C`.
-        attention_heads: The number of attention heads :math:`H`.
-        spatial: The number of spatial dimensinons :math:`N`.
-        window_size: The local attention window size.
-        qk_norm: Whether to use query-key RMS-normalization or not.
-        checkpointing: Whether to use gradient checkpointing or not.
-    """
-
-    def __init__(
-        self,
-        channels: int,
-        attention_heads: int = 1,
-        spatial: int = 2,
-        window_size: Union[int, Sequence[int]] = 5,
-        qk_norm: bool = True,
-        checkpointing: bool = True,
-    ):
-        super().__init__()
-
-        assert channels % attention_heads == 0
-
-        self.qkv_proj = nn.Linear(channels, 3 * channels, bias=False)
-        self.y_proj = nn.Linear(channels, channels)
-
-        if qk_norm:
-            self.qk_norm = nn.RMSNorm(
-                channels // attention_heads,
-                elementwise_affine=False,
-                eps=1e-5,
-            )
-        else:
-            self.qk_norm = nn.Identity()
-
-        self.heads = attention_heads
-        self.spatial = spatial
-
-        if isinstance(window_size, int):
-            self.window_size = (window_size,) * spatial
-        else:
-            self.window_size = tuple(window_size)
-
-        self.checkpointing = checkpointing
-
-    @property
-    def neighborhood_attention(self) -> Callable:
-        if self.spatial == 1:
-            return natten.functional.na1d
-        elif self.spatial == 2:
-            return natten.functional.na2d
-        elif self.spatial == 3:
-            return natten.functional.na3d
-        else:
-            raise NotImplementedError()
-
-    def _forward(self, x: Tensor, theta: Optional[Tensor] = None) -> Tensor:
-        r"""
-        Arguments:
-            x: The input tokens :math:`x`, with shape :math:`(*, L_1, ..., L_N, H \times C)`.
-            theta: Optional rotary positional embedding :math:`\theta`,
-                with shape :math:`(*, L_1, ..., L_N, H \times C / 2)`.
-
-        Returns:
-            The ouput tokens :math:`y`, with shape :math:`(*, L_1, ..., L_N, H \times C)`.
-        """
-
-        kernel_size = x.shape[-self.spatial - 1 : -1]
-        kernel_size = tuple(map(min, kernel_size, self.window_size))
-
-        qkv = self.qkv_proj(x)
-        q, k, v = rearrange(qkv, "... (n H C) -> n ... H C", n=3, H=self.heads)
-        q, k = self.qk_norm(q), self.qk_norm(k)
-
-        if theta is not None:
-            theta = rearrange(theta, "... (H C) -> ... H C", H=self.heads)
-            q, k = apply_rope(q, k, theta)
-
-        y = self.neighborhood_attention(q, k, v, kernel_size=kernel_size)
-
-        y = rearrange(y, "... H C -> ... (H C)")
-        y = self.y_proj(y)
-
-        return y
-
-    def forward(
-        self,
-        x: Tensor,
-        theta: Optional[Tensor] = None,
-    ) -> Tensor:
-        if self.checkpointing:
-            return checkpoint(self._forward, x, theta, use_reentrant=False)
-        else:
-            return self._forward(x, theta)
 
 
 def apply_rope(q: Tensor, k: Tensor, theta: Tensor) -> Tuple[Tensor, Tensor]:
