@@ -1,9 +1,9 @@
-name: "16x16x${ae.lat_channels}_medium"
+name: "f32c${.lat_channels}_medium"
 saturation: "arcsinh"
 lat_channels: 64
 hid_channels: [64, 128, 256, 512, 768, 1024]
 hid_blocks: [1, 2, 3, 3, 3, 3]
 pixel_shuffle: true
-norm: "group"
+norm: "layer"
 attention_heads: {5: 8}
 dropout: 0.01

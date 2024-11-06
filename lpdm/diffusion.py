@@ -3,6 +3,7 @@ r"""Diffusion building blocks."""
 __all__ = [
     "ImprovedPreconditionedDenoiser",
     "DenoiserLoss",
+    "get_autoencoder",
     "get_denoiser",
 ]
 
@@ -19,6 +20,7 @@ from torch.distributions import Beta, Distribution, Kumaraswamy
 from torch.nn.parallel import DistributedDataParallel
 from typing import Dict, Optional, Sequence, Tuple, Union
 
+from .nn.autoencoder import AutoEncoder
 from .nn.dit import DiT
 from .nn.embedding import SineEncoding
 from .nn.unet import UNet
@@ -197,16 +199,49 @@ class DenoiserLoss(nn.Module):
         return l_mean + l_var
 
 
+def get_autoencoder(
+    pix_channels: int,
+    lat_channels: int,
+    # Common
+    hid_channels: Sequence[int],
+    hid_blocks: Sequence[int],
+    saturation: str = "arcsinh",
+    # Future
+    arch: Optional[str] = None,
+    # Ignore
+    name: str = None,
+    loss: DictConfig = None,
+    # Others
+    **kwargs,
+) -> AutoEncoder:
+    r"""Instantiates an auto-encoder."""
+
+    if arch is None:
+        autoencoder = AutoEncoder(
+            pix_channels=pix_channels,
+            lat_channels=lat_channels,
+            hid_channels=hid_channels,
+            hid_blocks=hid_blocks,
+            saturation=saturation,
+            **kwargs,
+        )
+    else:
+        raise NotImplementedError()
+
+    return autoencoder
+
+
 def get_denoiser(
     arch: str,
     shape: Sequence[int],
+    # Common
     emb_features: int,
     hid_channels: Union[int, Sequence[int]],
     hid_blocks: Union[int, Sequence[int]],
     attention_heads: Union[int, Dict[int, int]],
     dropout: float = 0.1,
     # Denoiser
-    improved: bool = True,
+    improved: bool = False,
     schedule: DictConfig = None,
     # DiT
     qk_norm: bool = True,

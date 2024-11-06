@@ -1,5 +1,5 @@
 defaults:
-  - ae: 64x64_medium
+  - ae: f8c4_medium
   - ae/loss: mae
   - dataset: euler_open
   - optim: soap

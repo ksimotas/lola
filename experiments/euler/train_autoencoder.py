@@ -28,8 +28,8 @@ def train(
     from tqdm import trange
 
     from lpdm.data import field_preprocess, get_dataloader, get_well_dataset
+    from lpdm.diffusion import get_autoencoder
     from lpdm.loss import WeightedLoss
-    from lpdm.nn.autoencoder import AutoEncoder
     from lpdm.optim import get_optimizer, safe_gd_step
     from lpdm.utils import process_cpu_count, randseed
 
@@ -108,7 +108,7 @@ def train(
     )
 
     # Model, optimizer & scheduler
-    autoencoder = AutoEncoder(
+    autoencoder = get_autoencoder(
         pix_channels=trainset.metadata.n_fields,
         **cfg.ae,
     ).to(device)

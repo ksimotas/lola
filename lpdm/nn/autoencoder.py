@@ -11,7 +11,6 @@ import math
 import torch
 import torch.nn as nn
 
-from omegaconf import DictConfig
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 from typing import Dict, Optional, Sequence, Tuple, Union
@@ -367,8 +366,6 @@ class AutoEncoder(nn.Module):
         hid_channels: Sequence[int] = (64, 128, 256),
         hid_blocks: Sequence[int] = (3, 3, 3),
         saturation: str = "arcsinh",
-        name: str = None,  # ignored
-        loss: DictConfig = None,  # ignored
         **kwargs,
     ):
         super().__init__()

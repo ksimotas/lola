@@ -25,7 +25,7 @@ def cache_latent(
     from tqdm import trange
 
     from lpdm.data import field_preprocess, get_well_dataset
-    from lpdm.nn.autoencoder import AutoEncoder
+    from lpdm.diffusion import get_autoencoder
 
     device = torch.device("cuda")
 
@@ -59,7 +59,7 @@ def cache_latent(
     )
 
     # Autoencoder
-    autoencoder = AutoEncoder(
+    autoencoder = get_autoencoder(
         pix_channels=dataset.metadata.n_fields,
         **cfg.ae,
     )

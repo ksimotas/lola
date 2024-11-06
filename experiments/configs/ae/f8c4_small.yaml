@@ -1,7 +1,7 @@
-name: "64x64x${ae.lat_channels}_large"
+name: "f8c${.lat_channels}_small"
 saturation: "arcsinh"
 lat_channels: 4
-hid_channels: [128, 256, 384, 512]
+hid_channels: [32, 64, 128, 256]
 hid_blocks: [1, 2, 3, 3]
 pixel_shuffle: true
 norm: "group"
