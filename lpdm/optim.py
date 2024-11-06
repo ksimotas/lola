@@ -119,7 +119,7 @@ def get_optimizer(
     elif scheduler == "cosine":
         lr_lambda = lambda t: (1 + math.cos(math.pi * t / epochs)) / 2
     elif scheduler == "exponential":
-        lr_lambda = lambda t: math.exp(math.log(1e-6) * t / epochs)
+        lr_lambda = lambda t: math.exp(math.log(1e-3) * t / epochs)
     else:
         raise NotImplementedError()
 
