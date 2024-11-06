@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 
 from torch import Tensor
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Optional, Sequence, Tuple
 
 from .soap import SOAP
 
@@ -50,6 +50,7 @@ class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
 def get_optimizer(
     params: Iterable[nn.Parameter],
     optimizer: str = "adamw",
+    betas: Sequence[float] = (0.9, 0.999, 0.999),
     learning_rate: float = 1e-4,
     weight_decay: float = 0.0,
     scheduler: Optional[str] = None,
@@ -79,8 +80,9 @@ def get_optimizer(
 
     if optimizer == "adamw":
         optimizer = torch.optim.AdamW(
-            params=params,
+            params,
             lr=learning_rate,
+            betas=(betas[0], betas[1]),
             weight_decay=weight_decay,
         )
     elif optimizer == "shampoo":
@@ -90,21 +92,23 @@ def get_optimizer(
         optimizer = DistributedShampoo(
             params,
             lr=learning_rate,
-            betas=(0.9, 0.999),
+            betas=(betas[0], betas[1]),
+            beta3=betas[2],
             epsilon=1e-12,
             weight_decay=weight_decay,
             use_decoupled_weight_decay=True,
             precondition_frequency=precondition_frequency,
             max_preconditioner_dim=percondition_dim,
             grafting_config=AdamGraftingConfig(
-                beta2=0.999,
-                epsilon=1e-08,
+                beta2=betas[1],
+                epsilon=1e-8,
             ),
         )
     elif optimizer == "soap":
         optimizer = SOAP(
             params,
             lr=learning_rate,
+            betas=betas,
             weight_decay=weight_decay,
             precondition_frequency=precondition_frequency,
             max_precond_dim=percondition_dim,
