@@ -251,6 +251,7 @@ def get_denoiser(
     # UNet
     kernel_size: Union[int, Sequence[int]] = 3,
     stride: Union[int, Sequence[int]] = 2,
+    norm: str = "layer",
     # Label
     label_features: int = 0,
     # Ignore
@@ -285,6 +286,7 @@ def get_denoiser(
             hid_blocks=hid_blocks,
             kernel_size=kernel_size,
             stride=stride,
+            norm=norm,
             attention_heads=attention_heads,
             spatial=len(shape) - 1,
             dropout=dropout,

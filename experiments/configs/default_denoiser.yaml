@@ -1,9 +1,9 @@
 defaults:
   - dataset: euler_open
-  - denoiser: dit_medium
+  - denoiser: dit_large
   - denoiser/loss: beta
   - denoiser/schedule: log_logit
-  - optim: adamw
+  - optim: soap
 
 trajectory:
   length: 3
