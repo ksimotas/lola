@@ -5,8 +5,8 @@ defaults:
   - optim: soap
 
 train:
-  epochs: 256
-  epoch_size: 65536
+  epochs: 1024
+  epoch_size: 16384
   batch_size: 64
   accumulation: 1
   lazy_shuffle: true

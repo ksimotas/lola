@@ -252,7 +252,7 @@ def get_denoiser(
     hid_channels: Union[int, Sequence[int]],
     hid_blocks: Union[int, Sequence[int]],
     attention_heads: Union[int, Dict[int, int]],
-    dropout: float = 0.1,
+    dropout: Optional[float] = None,
     # Denoiser
     improved: bool = False,
     schedule: DictConfig = None,
