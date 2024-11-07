@@ -18,3 +18,4 @@ train:
 
 ae_path: ???
 boot_state: null
+conditional: false

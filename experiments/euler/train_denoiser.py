@@ -182,11 +182,17 @@ def train(runid: str, cfg: DictConfig):
             z = z.to(device, non_blocking=True)
             z = rearrange(z, "B L C H W -> B C L H W")
 
+            if cfg.conditional:
+                mask = torch.zeros_like(z, dtype=bool)
+                mask[:, :, 0] = True
+            else:
+                mask = None
+
             label = batch["label"]
             label = label.to(device, non_blocking=True)
 
             if (i + 1) % cfg.train.accumulation == 0:
-                loss = denoiser_loss(denoiser, z, label=label)
+                loss = denoiser_loss(denoiser, z, mask=mask, label=label)
                 loss.backward()
 
                 grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
@@ -195,7 +201,7 @@ def train(runid: str, cfg: DictConfig):
                 average.update_parameters(denoiser.module)
             else:
                 with denoiser.no_sync():
-                    loss = denoiser_loss(denoiser, z, label=label)
+                    loss = denoiser_loss(denoiser, z, mask=mask, label=label)
                     loss.backward()
 
             losses.append(loss.detach())
@@ -241,10 +247,16 @@ def train(runid: str, cfg: DictConfig):
                 z = z.to(device, non_blocking=True)
                 z = rearrange(z, "B L C H W -> B C L H W")
 
+                if cfg.conditional:
+                    mask = torch.zeros_like(z, dtype=bool)
+                    mask[:, :, 0] = True
+                else:
+                    mask = None
+
                 label = batch["label"]
                 label = label.to(device, non_blocking=True)
 
-                loss = denoiser_loss(denoiser, z, label=label)
+                loss = denoiser_loss(denoiser, z, mask=mask, label=label)
                 losses.append(loss)
 
         losses = torch.stack(losses)

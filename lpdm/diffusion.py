@@ -15,7 +15,7 @@ from azula.denoise import Gaussian, GaussianDenoiser, PreconditionedDenoiser
 from azula.nn.utils import FlattenWrapper
 from azula.noise import Schedule, VESchedule
 from omegaconf import DictConfig
-from torch import Tensor
+from torch import BoolTensor, Tensor
 from torch.distributions import Beta, Distribution, Kumaraswamy
 from torch.nn.parallel import DistributedDataParallel
 from typing import Dict, Optional, Sequence, Tuple, Union
@@ -160,7 +160,13 @@ class DenoiserLoss(nn.Module):
         else:
             raise ValueError(f"unknown distribution {self.distribution}")
 
-    def forward(self, denoiser: GaussianDenoiser, x: Tensor, **kwargs) -> Tensor:
+    def forward(
+        self,
+        denoiser: GaussianDenoiser,
+        x: Tensor,
+        mask: Optional[BoolTensor] = None,
+        **kwargs,
+    ) -> Tensor:
         r"""
         Arguments:
             x: A clean vector :math:`x`, with shape :math:`(B, ...)`.
@@ -186,6 +192,13 @@ class DenoiserLoss(nn.Module):
         x = torch.reshape(x, (B, -1))
         z = torch.randn_like(x)
         x_t = alpha_t * x + sigma_t * z
+
+        if mask is not None:
+            x_t = torch.where(
+                torch.reshape(mask, (B, -1)),
+                torch.sqrt(alpha_t**2 + sigma_t**2) * x,
+                x_t,
+            )
 
         q = denoiser(x_t, t, shape=shape, **kwargs)
 
