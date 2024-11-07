@@ -61,6 +61,24 @@ def train(
     if rank == 0:
         OmegaConf.save(cfg, runpath / "config.yaml")
 
+    # Stem
+    if cfg.fork_from is None:
+        counter = {
+            "epoch": 0,
+            "update_samples": 0,
+            "update_steps": 0,
+        }
+    else:
+        stem = wandb.Api().run(path=cfg.fork_from)
+        stem_path = Path(stem.config["path"])
+        stem_state = torch.load(stem_path / f"{cfg.fork_target}.pth", weights_only=True)
+
+        counter = {
+            "epoch": stem.summary["_step"] + 1,
+            "update_samples": stem.summary["train/samples"],
+            "update_steps": stem.summary["train/update_steps"],
+        }
+
     # Data
     trainset = get_well_dataset(
         path=os.path.join(datasets, cfg.dataset.physics),
@@ -115,8 +133,8 @@ def train(
 
     autoencoder_loss = WeightedLoss(**cfg.ae.loss).to(device)
 
-    if cfg.boot_state:
-        autoencoder.load_state_dict(torch.load(cfg.boot_state, weights_only=True))
+    if cfg.fork_from is not None:
+        autoencoder.load_state_dict(stem_state)
 
     autoencoder = DistributedDataParallel(
         module=autoencoder,
@@ -144,9 +162,7 @@ def train(
     else:
         epochs = range(cfg.train.epochs)
 
-    steps_per_epoch = cfg.train.epoch_size // cfg.train.batch_size // cfg.train.accumulation
-
-    for epoch in epochs:
+    for _ in epochs:
         ## Train
         autoencoder.train()
 
@@ -167,6 +183,9 @@ def train(
 
                 grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
                 grads.append(grad_norm)
+
+                counter["update_samples"] += cfg.train.batch_size * cfg.train.accumulation
+                counter["update_steps"] += 1
             else:
                 with autoencoder.no_sync():
                     y, z = autoencoder(x)
@@ -198,8 +217,8 @@ def train(
             logs["train/grad_norm/mean"] = grads.mean().item()
             logs["train/grad_norm/std"] = grads.std().item()
             logs["train/learning_rate"] = optimizer.param_groups[0]["lr"]
-            logs["train/update_steps"] = (epoch + 1) * steps_per_epoch
-            logs["train/samples"] = (epoch + 1) * cfg.train.epoch_size
+            logs["train/update_steps"] = counter["update_steps"]
+            logs["train/samples"] = counter["update_samples"]
 
         del losses, losses_list, grads, grads_list
 
@@ -241,7 +260,9 @@ def train(
                 lv=logs["valid/loss/mean"],
             )
 
-            run.log(logs)
+            run.log(logs, step=counter["epoch"])
+
+            counter["epoch"] += 1
 
         del losses, losses_list
 

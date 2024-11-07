@@ -11,4 +11,5 @@ train:
   accumulation: 1
   lazy_shuffle: true
 
-boot_state: null
+fork_from: null
+fork_target: "state"

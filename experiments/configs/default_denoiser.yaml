@@ -16,6 +16,8 @@ train:
   accumulation: 1
   ema_decay: 0.999
 
-ae_path: ???
-boot_state: null
 conditional: false
+
+ae_from: ???
+fork_from: null
+fork_target: "state"

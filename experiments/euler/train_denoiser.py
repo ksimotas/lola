@@ -49,7 +49,7 @@ def train(runid: str, cfg: DictConfig):
     runpath.mkdir(parents=True, exist_ok=True)
 
     if rank == 0:
-        os.symlink(os.path.realpath(cfg.ae_path, strict=True), runpath / "autoencoder")
+        os.symlink(os.path.realpath(cfg.ae_from, strict=True), runpath / "autoencoder")
 
     dist.barrier(device_ids=[device_id])
 
@@ -60,6 +60,24 @@ def train(runid: str, cfg: DictConfig):
 
     if rank == 0:
         OmegaConf.save(cfg, runpath / "config.yaml")
+
+    # Stem
+    if cfg.fork_from is None:
+        counter = {
+            "epoch": 0,
+            "update_samples": 0,
+            "update_steps": 0,
+        }
+    else:
+        stem = wandb.Api().run(path=cfg.fork_from)
+        stem_path = Path(stem.config["path"])
+        stem_state = torch.load(stem_path / f"{cfg.fork_target}.pth", weights_only=True)
+
+        counter = {
+            "epoch": stem.summary["_step"] + 1,
+            "update_samples": stem.summary["train/samples"],
+            "update_steps": stem.summary["train/update_steps"],
+        }
 
     # Data
     train_files = find_hdf5(
@@ -76,7 +94,7 @@ def train(runid: str, cfg: DictConfig):
         for file in (*train_files, *valid_files):
             map_to_memory(file, shm=f"/dev/shm/{runid}", exist_ok=False)
 
-    dist.barrier()
+    dist.barrier(device_ids=[device_id])
 
     train_files = [
         map_to_memory(file, shm=f"/dev/shm/{runid}", exist_ok=True) for file in train_files
@@ -132,8 +150,8 @@ def train(runid: str, cfg: DictConfig):
 
     denoiser_loss = DenoiserLoss(**cfg.denoiser.loss).to(device)
 
-    if cfg.boot_state:
-        denoiser.load_state_dict(torch.load(cfg.boot_state, weights_only=True))
+    if cfg.fork_from is not None:
+        denoiser.load_state_dict(stem_state)
 
     denoiser = DistributedDataParallel(
         module=denoiser,
@@ -166,10 +184,9 @@ def train(runid: str, cfg: DictConfig):
     else:
         epochs = range(cfg.train.epochs)
 
-    steps_per_epoch = cfg.train.epoch_size // cfg.train.batch_size // cfg.train.accumulation
     best_valid_loss = float("inf")
 
-    for epoch in epochs:
+    for _ in epochs:
         ## Train
         denoiser.train()
 
@@ -199,6 +216,9 @@ def train(runid: str, cfg: DictConfig):
                 grads.append(grad_norm)
 
                 average.update_parameters(denoiser.module)
+
+                counter["update_samples"] += cfg.train.batch_size * cfg.train.accumulation
+                counter["update_steps"] += 1
             else:
                 with denoiser.no_sync():
                     loss = denoiser_loss(denoiser, z, mask=mask, label=label)
@@ -229,8 +249,8 @@ def train(runid: str, cfg: DictConfig):
             logs["train/grad_norm/mean"] = grads.mean().item()
             logs["train/grad_norm/std"] = grads.std().item()
             logs["train/learning_rate"] = optimizer.param_groups[0]["lr"]
-            logs["train/update_steps"] = (epoch + 1) * steps_per_epoch
-            logs["train/samples"] = (epoch + 1) * cfg.train.epoch_size
+            logs["train/update_steps"] = counter["update_steps"]
+            logs["train/samples"] = counter["update_samples"]
 
         del losses, losses_list, grads, grads_list
 
@@ -279,7 +299,9 @@ def train(runid: str, cfg: DictConfig):
                 lv=logs["valid/loss/mean"],
             )
 
-            run.log(logs)
+            run.log(logs, step=counter["epoch"])
+
+            counter["epoch"] += 1
 
         del losses, losses_list
 
