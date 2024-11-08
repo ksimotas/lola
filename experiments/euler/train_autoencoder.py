@@ -313,7 +313,7 @@ if __name__ == "__main__":
     dawgz.schedule(
         dawgz.job(
             f=partial(train, runid, cfg, datasets),
-            name="train",
+            name=f"auto-encoder {runid}",
             cpus=args.cpus_per_gpu * args.gpus,
             gpus=args.gpus,
             ram=args.ram,
