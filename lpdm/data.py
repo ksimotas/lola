@@ -52,8 +52,8 @@ TRANSFORMS = {
 
 def field_preprocess(
     x: Tensor,
-    mean: Tensor,
-    std: Tensor,
+    mean: Optional[Tensor] = None,
+    std: Optional[Tensor] = None,
     transform: Dict[int, str] = {},  # noqa: B006
 ) -> Tensor:
     r"""Pre-processes the physical fields of a state.
@@ -72,13 +72,19 @@ def field_preprocess(
         t, _ = TRANSFORMS[key]
         x[..., i] = t(x[..., i])
 
-    return (x - mean.to(x)) / std.to(x)
+    if mean is not None:
+        x = x - mean.to(x)
+
+    if std is not None:
+        x = x / std.to(x)
+
+    return x
 
 
 def field_postprocess(
     x: Tensor,
-    mean: Tensor,
-    std: Tensor,
+    mean: Optional[Tensor] = None,
+    std: Optional[Tensor] = None,
     transform: Dict[int, str] = {},  # noqa: B006
 ) -> Tensor:
     r"""Post-processes the physical fields of a state.
@@ -95,7 +101,11 @@ def field_postprocess(
         The post-processed state tensor, with shape :math:`(*, C)`.
     """
 
-    x = x * std.to(x) + mean.to(x)
+    if std is not None:
+        x = x * std.to(x)
+
+    if mean is not None:
+        x = x + mean.to(x)
 
     for i, key in transform.items():
         _, t_inv = TRANSFORMS[key]
