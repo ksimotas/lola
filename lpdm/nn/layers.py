@@ -18,13 +18,20 @@ from torch.utils.checkpoint import checkpoint
 from typing import Sequence, Union
 
 
-def ConvNd(in_channels: int, out_channels: int, spatial: int = 2, **kwargs) -> nn.Module:
+def ConvNd(
+    in_channels: int,
+    out_channels: int,
+    spatial: int = 2,
+    identity_init: bool = False,
+    **kwargs,
+) -> nn.Module:
     r"""Returns an N-dimensional convolutional layer.
 
     Arguments:
-        in_channels: Number of input channels :math:`C_i`.
-        out_channels: Number of output channels :math:`C_o`.
+        in_channels: The number of input channels :math:`C_i`.
+        out_channels: The number of output channels :math:`C_o`.
         spatial: The number of spatial dimensions :math:`N`.
+        identity_init: Initialize the convolution as a (pseudo-)identity.
         kwargs: Keyword arguments passed to :class:`torch.nn.Conv2d`.
     """
 
@@ -39,7 +46,20 @@ def ConvNd(in_channels: int, out_channels: int, spatial: int = 2, **kwargs) -> n
     else:
         raise NotImplementedError()
 
-    return Conv(in_channels, out_channels, **kwargs)
+    conv = Conv(in_channels, out_channels, **kwargs)
+
+    if identity_init:
+        kernel_size = conv.weight.shape[2:]
+        kernel_center = [k // 2 for k in kernel_size]
+
+        eye = torch.zeros_like(conv.weight.data)
+
+        for i in range(out_channels):
+            eye[(i, i % in_channels, *kernel_center)] = 1
+
+        conv.weight.data.add_(eye)
+
+    return conv
 
 
 class LayerNorm(nn.Module):

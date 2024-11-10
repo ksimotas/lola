@@ -196,6 +196,7 @@ class UNet(nn.Module):
                         hid_channels[i],
                         stride=stride,
                         spatial=spatial,
+                        identity_init=True,
                         **kwargs,
                     ),
                 )
@@ -212,6 +213,7 @@ class UNet(nn.Module):
                         hid_channels[i] + hid_channels[i + 1],
                         hid_channels[i],
                         spatial=spatial,
+                        identity_init=True,
                         **kwargs,
                     ),
                 )

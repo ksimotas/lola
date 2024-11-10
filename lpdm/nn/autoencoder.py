@@ -168,6 +168,7 @@ class Encoder(nn.Module):
                                 hid_channels[i - 1] * math.prod(stride),
                                 hid_channels[i],
                                 spatial=spatial,
+                                identity_init=True,
                                 **kwargs,
                             ),
                         )
@@ -179,6 +180,7 @@ class Encoder(nn.Module):
                             hid_channels[i],
                             spatial=spatial,
                             stride=stride,
+                            identity_init=True,
                             **kwargs,
                         )
                     )
@@ -304,6 +306,7 @@ class Decoder(nn.Module):
                                 hid_channels[i],
                                 hid_channels[i - 1] * math.prod(stride),
                                 spatial=spatial,
+                                identity_init=True,
                                 **kwargs,
                             ),
                             Unpatchify(patch_size=stride),
@@ -317,6 +320,7 @@ class Decoder(nn.Module):
                                 hid_channels[i],
                                 hid_channels[i - 1],
                                 spatial=spatial,
+                                identity_init=True,
                                 **kwargs,
                             ),
                         )
