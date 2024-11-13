@@ -138,6 +138,44 @@ class ImprovedPreconditionedDenoiser(GaussianDenoiser):
         return Gaussian(mean=mean, var=var)
 
 
+class MaskedDenoiser(GaussianDenoiser):
+    r"""Creates a masked denoiser module.
+
+    Arguments:
+        denoiser: A Gaussian denoiser.
+        y: An observation :math:`y = m \times x`.
+        mask: The observation mask :math:`m`.
+    """
+
+    def __init__(
+        self,
+        denoiser: GaussianDenoiser,
+        y: Tensor,
+        mask: BoolTensor,
+    ):
+        super().__init__()
+
+        self.denoiser = denoiser
+
+        self.register_buffer("y", torch.as_tensor(y))
+        self.register_buffer("mask", torch.as_tensor(mask))
+
+    @property
+    def schedule(self) -> Schedule:
+        return self.denoiser.schedule
+
+    def forward(self, x_t: Tensor, t: Tensor, **kwargs) -> Gaussian:
+        alpha_t, sigma_t = self.schedule(t)
+
+        x_t = torch.where(
+            self.mask,
+            torch.sqrt(alpha_t**2 + sigma_t**2) * self.y,
+            x_t,
+        )
+
+        return self.denoiser.forward(x_t, t, **kwargs)
+
+
 class DenoiserLoss(nn.Module):
     r"""Creates a loss module for a Gaussian denoiser."""
 
