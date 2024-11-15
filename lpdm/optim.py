@@ -58,7 +58,7 @@ def get_optimizer(
     warmup: Optional[int] = None,
     # Shampoo & SOAP
     precondition_frequency: int = 16,
-    percondition_dim: int = 4096,
+    precondition_dim: int = 4096,
     # Ignored
     name: str = None,
     grad_clip: float = None,
@@ -98,7 +98,7 @@ def get_optimizer(
             weight_decay=weight_decay,
             use_decoupled_weight_decay=True,
             precondition_frequency=precondition_frequency,
-            max_preconditioner_dim=percondition_dim,
+            max_preconditioner_dim=precondition_dim,
             grafting_config=AdamGraftingConfig(
                 beta2=betas[1],
                 epsilon=1e-8,
@@ -111,7 +111,7 @@ def get_optimizer(
             betas=betas,
             weight_decay=weight_decay,
             precondition_frequency=precondition_frequency,
-            max_precond_dim=percondition_dim,
+            max_precond_dim=precondition_dim,
         )
     else:
         raise NotImplementedError()
