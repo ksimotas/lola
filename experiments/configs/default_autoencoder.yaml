@@ -1,7 +1,7 @@
 defaults:
   - ae: f8c4_medium
   - ae/loss: mae
-  - dataset: euler_open
+  - dataset: euler_all
   - optim: soap
 
 train:

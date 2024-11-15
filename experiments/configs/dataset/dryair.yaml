@@ -1,5 +1,5 @@
 name: "dryair"
-physics: "euler_multi_quadrants_openBC"
+physics: ["euler_multi_quadrants_openBC"]
 include_filters: ["Dry_air_1000"]
 periodic: false
 fields: ["energy", "density", "pressure", "momentum_x", "momentum_y"]

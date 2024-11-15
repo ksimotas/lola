@@ -1,5 +1,5 @@
 name: "euler_periodic"
-physics: "euler_multi_quadrants_periodicBC"
+physics: ["euler_multi_quadrants_periodicBC"]
 include_filters: []
 periodic: true
 fields: ["energy", "density", "pressure", "momentum_x", "momentum_y"]

@@ -15,7 +15,6 @@ def cache_latent(
 ):
     import h5py
     import numpy as np
-    import os
     import torch
 
     from einops import rearrange
@@ -39,13 +38,15 @@ def cache_latent(
 
     # Data
     dataset = get_well_dataset(
-        path=os.path.join(datasets, physics),
+        path=datasets,
+        physics=physics,
         split=split,
         include_filters=[file],
     )
 
     dataset = get_well_dataset(
-        path=os.path.join(datasets, physics),
+        path=datasets,
+        physics=physics,
         split=split,
         steps=dataset.metadata.n_steps_per_trajectory[0],
         include_filters=[file],

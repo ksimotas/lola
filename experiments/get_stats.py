@@ -15,7 +15,6 @@ def get_stats(
     datasets: str = "/mnt/ceph/users/polymathic/the_well/datasets",
 ):
     import itertools
-    import os
     import torch
 
     from einops import rearrange
@@ -30,7 +29,8 @@ def get_stats(
 
     # Data
     trainset = get_well_dataset(
-        path=os.path.join(datasets, dataset.physics),
+        path=datasets,
+        physics=dataset.physics,
         split="train",
         steps=1,
         include_filters=dataset.include_filters,

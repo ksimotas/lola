@@ -27,7 +27,7 @@ def train(
     from torch.nn.parallel import DistributedDataParallel
     from tqdm import trange
 
-    from lpdm.data import field_preprocess, get_dataloader, get_well_dataset
+    from lpdm.data import field_preprocess, get_dataloader, get_well_multi_dataset
     from lpdm.diffusion import get_autoencoder
     from lpdm.loss import WeightedLoss
     from lpdm.optim import get_optimizer, safe_gd_step
@@ -80,8 +80,9 @@ def train(
         }
 
     # Data
-    trainset = get_well_dataset(
-        path=os.path.join(datasets, cfg.dataset.physics),
+    trainset = get_well_multi_dataset(
+        path=datasets,
+        physics=cfg.dataset.physics,
         split="train",
         steps=1,
         include_filters=cfg.dataset.include_filters,
@@ -99,8 +100,9 @@ def train(
         seed=cfg.seed,
     )
 
-    validset = get_well_dataset(
-        path=os.path.join(datasets, cfg.dataset.physics),
+    validset = get_well_multi_dataset(
+        path=datasets,
+        physics=cfg.dataset.physics,
         split="valid",
         steps=1,
         include_filters=cfg.dataset.include_filters,

@@ -80,15 +80,23 @@ def train(runid: str, cfg: DictConfig):
         }
 
     # Data
-    train_files = find_hdf5(
-        path=runpath / "autoencoder/cache" / cfg.dataset.physics / "train",
-        include_filters=cfg.dataset.include_filters,
-    )
+    train_files = [
+        file
+        for physic in cfg.dataset.physics
+        for file in find_hdf5(
+            path=runpath / "autoencoder/cache" / physic / "train",
+            include_filters=cfg.dataset.include_filters,
+        )
+    ]
 
-    valid_files = find_hdf5(
-        path=runpath / "autoencoder/cache" / cfg.dataset.physics / "valid",
-        include_filters=cfg.dataset.include_filters,
-    )
+    valid_files = [
+        file
+        for physic in cfg.dataset.physics
+        for file in find_hdf5(
+            path=runpath / "autoencoder/cache" / physic / "valid",
+            include_filters=cfg.dataset.include_filters,
+        )
+    ]
 
     if rank == 0:
         for file in (*train_files, *valid_files):

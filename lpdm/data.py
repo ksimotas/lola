@@ -158,9 +158,26 @@ def compose_augmentation(*names: str) -> Augmentation:
     return Compose(*augmentations)
 
 
+def get_well_multi_dataset(
+    path: str,
+    physics: Union[str, Sequence[str]],
+    **kwargs,
+):
+    if isinstance(physics, str):
+        physics = [physics]
+
+    datasets = [get_well_dataset(path, physic, **kwargs) for physic in physics]
+
+    dataset = ConcatDataset(datasets)
+    dataset.metadata = datasets[0].metadata
+
+    return dataset
+
+
 def get_well_dataset(
     path: str,
-    split: Optional[str] = None,
+    physics: str,
+    split: str,
     steps: int = 1,
     include_filters: Sequence[str] = (),
     exclude_filters: Sequence[str] = (),
@@ -183,6 +200,13 @@ def get_well_dataset(
     """
 
     path = os.path.realpath(os.path.expanduser(path), strict=True)
+
+    if os.path.exists(os.path.join(path, physics)):
+        path = os.path.join(path, physics)
+    elif os.path.exists(os.path.join(path, "datasets", physics)):
+        path = os.path.join(path, "datasets", physics)
+    else:
+        raise NotADirectoryError(f"{os.path.join(path, physics)} does not exist.")
 
     if os.path.exists(os.path.join(path, split)):
         path = os.path.join(path, split)
