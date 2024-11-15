@@ -65,7 +65,12 @@ def cache_latent(
         **cfg.ae,
     )
 
-    autoencoder.load_state_dict(torch.load(runpath / "state.pth", weights_only=True))
+    state = torch.load(runpath / "state.pth", weights_only=True)
+
+    if "predictor" in state:
+        state = state["autoencoder"]
+
+    autoencoder.load_state_dict(state)
     autoencoder.to(device)
     autoencoder.eval()
 
@@ -87,7 +92,10 @@ def cache_latent(
             with torch.no_grad():
                 z = autoencoder.encode(x)
 
-            label = batch["constant_scalars"]
+            label = torch.cat([
+                batch["constant_scalars"].reshape(-1),
+                batch["boundary_conditions"].reshape(-1),
+            ])
 
             if "state" not in f:
                 f.create_dataset("state", shape=(len(dataset), *z.shape), dtype=np.float32)
