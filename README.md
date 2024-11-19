@@ -20,3 +20,9 @@ Optionally, we provide [pre-commit hooks](pre-commit.yml) to automatically detec
 ```
 pre-commit install --config pre-commit.yaml
 ```
+
+Before running the [experiments](experiments/), create a symlink to the Well datasets.
+
+```
+ln -s /mnt/ceph/users/polymathic/the_well ~/ceph/the_well
+```

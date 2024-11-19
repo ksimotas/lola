@@ -15,7 +15,7 @@ def cache_latent(
     file: str,
     augment: Sequence[str] = (),
     duplicate: int = 1,
-    datasets: str = "/mnt/ceph/users/polymathic/the_well/datasets",
+    datasets: str = "~/ceph/the_well/datasets",
 ):
     import h5py
     import numpy as np
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Files
-    datasets = "/mnt/ceph/users/polymathic/the_well/datasets"
+    datasets = "~/ceph/the_well/datasets"
     path = os.path.join(datasets, args.physics, "data", args.split)
 
     files = glob.glob("*.hdf5", root_dir=path) + glob.glob("*.h5", root_dir=path)

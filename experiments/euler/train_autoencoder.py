@@ -13,7 +13,7 @@ from lpdm.hydra import compose
 def train(
     runid: str,
     cfg: DictConfig,
-    datasets: str = "/mnt/ceph/users/polymathic/the_well/datasets",
+    datasets: str = "~/ceph/the_well/datasets",
 ):
     import os
     import torch
@@ -307,7 +307,7 @@ if __name__ == "__main__":
     if args.gpuxl:
         datasets = "/mnt/gpuxl/polymathic/the_well/datasets"
     else:
-        datasets = "/mnt/ceph/users/polymathic/the_well/datasets"
+        datasets = "~/ceph/the_well/datasets"
 
     # Job
     runid = wandb.util.generate_id()
