@@ -328,6 +328,7 @@ if __name__ == "__main__":
         backend="slurm",
         interpreter=f"torchrun --nnodes 1 --nproc-per-node {args.gpus} --standalone",
         env=[
+            "export OMP_NUM_THREADS=" + f"{args.cpus_per_gpu}",
             "export WANDB_SILENT=true",
             "export XDG_CACHE_HOME=$HOME/.cache",
         ],
