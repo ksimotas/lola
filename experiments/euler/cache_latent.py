@@ -5,12 +5,16 @@ import dawgz
 import glob
 import os
 
+from typing import Sequence
+
 
 def cache_latent(
     autoencoder: str,
     physics: str,
     split: str,
     file: str,
+    augment: Sequence[str] = (),
+    duplicate: int = 1,
     datasets: str = "/mnt/ceph/users/polymathic/the_well/datasets",
 ):
     import h5py
@@ -50,6 +54,7 @@ def cache_latent(
         split=split,
         steps=dataset.metadata.n_steps_per_trajectory[0],
         include_filters=[file],
+        augment=augment,
     )
 
     preprocess = partial(
@@ -82,29 +87,49 @@ def cache_latent(
 
     with h5py.File(cache_path, mode="x") as f:
         for i in trange(len(dataset), ncols=88, ascii=True):
-            batch = dataset[i]
+            visited = []
 
-            x = batch["input_fields"]
-            x = x.to(device, non_blocking=True)
-            x = preprocess(x)
-            x = rearrange(x, "L H W C -> L C H W")
+            for j in range(duplicate):
+                while True:
+                    batch = dataset[i]
 
-            with torch.no_grad():
-                z = autoencoder.encode(x)
+                    x = batch["input_fields"]
+                    x = x.to(device, non_blocking=True)
+                    x = preprocess(x)
+                    x = rearrange(x, "L H W C -> L C H W")
 
-            label = torch.cat([
-                batch["constant_scalars"].reshape(-1),
-                batch["boundary_conditions"].reshape(-1),
-            ])
+                    for y in visited:
+                        if torch.allclose(x, y):
+                            break
+                    else:
+                        break
 
-            if "state" not in f:
-                f.create_dataset("state", shape=(len(dataset), *z.shape), dtype=np.float32)
+                visited.append(x)
 
-            if "label" not in f:
-                f.create_dataset("label", shape=(len(dataset), *label.shape), dtype=np.float32)
+                with torch.no_grad():
+                    z = autoencoder.encode(x)
 
-            f["state"][i] = z.numpy(force=True)
-            f["label"][i] = label.numpy(force=True)
+                label = torch.cat([
+                    batch["constant_scalars"].reshape(-1),
+                    batch["boundary_conditions"].reshape(-1),
+                ])
+
+                if "state" not in f:
+                    f.create_dataset(
+                        "state",
+                        shape=(len(dataset) * duplicate, *z.shape),
+                        dtype=np.float32,
+                    )
+
+                if "label" not in f:
+                    f.create_dataset(
+                        "label",
+                        shape=(len(dataset) * duplicate, *label.shape),
+                        dtype=np.float32,
+                    )
+
+                f["state"][i * duplicate + j] = z.numpy(force=True)
+                f["label"][i * duplicate + j] = label.numpy(force=True)
 
 
 if __name__ == "__main__":
@@ -114,6 +139,8 @@ if __name__ == "__main__":
     parser.add_argument("--physics", default="euler_multi_quadrants_openBC", type=str)
     parser.add_argument("--split", default="train", type=str)
     parser.add_argument("--filters", nargs="*", type=str)
+    parser.add_argument("--augment", nargs="*", type=str)
+    parser.add_argument("--duplicate", default=1, type=int)
 
     args = parser.parse_args()
 
@@ -133,6 +160,8 @@ if __name__ == "__main__":
             physics=args.physics,
             split=args.split,
             file=files[i],
+            augment=args.augment,
+            duplicate=args.duplicate,
         )
 
     dawgz.schedule(
@@ -143,7 +172,7 @@ if __name__ == "__main__":
             cpus=4,
             gpus=1,
             ram="64GB",
-            time="01:00:00",
+            time="06:00:00",
             partition="gpu",
             constraint="h100|a100",
         ),
