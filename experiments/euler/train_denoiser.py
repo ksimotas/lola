@@ -207,9 +207,14 @@ def train(runid: str, cfg: DictConfig):
             z = z.to(device, non_blocking=True)
             z = rearrange(z, "B L C H W -> B C L H W")
 
-            if cfg.conditional:
-                mask = torch.zeros_like(z, dtype=bool)
-                mask[:, :, 0] = True
+            if cfg.masking:
+                mask = torch.rand(
+                    (z.shape[0], 1, z.shape[2], 1, 1),
+                    dtype=z.dtype,
+                    device=z.device,
+                )
+                mask = mask < 1 / z.shape[2]
+                mask = mask.expand(z.shape).contiguous()
             else:
                 mask = None
 
@@ -275,9 +280,14 @@ def train(runid: str, cfg: DictConfig):
                 z = z.to(device, non_blocking=True)
                 z = rearrange(z, "B L C H W -> B C L H W")
 
-                if cfg.conditional:
-                    mask = torch.zeros_like(z, dtype=bool)
-                    mask[:, :, 0] = True
+                if cfg.masking:
+                    mask = torch.rand(
+                        (z.shape[0], 1, z.shape[2], 1, 1),
+                        dtype=z.dtype,
+                        device=z.device,
+                    )
+                    mask = mask < 1 / z.shape[2]
+                    mask = mask.expand(z.shape).contiguous()
                 else:
                     mask = None
 
