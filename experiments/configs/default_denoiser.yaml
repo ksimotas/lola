@@ -1,12 +1,12 @@
 defaults:
-  - dataset: euler_open
+  - dataset: euler_all
   - denoiser: dit_large
   - denoiser/loss: beta
   - denoiser/schedule: log_logit
   - optim: soap
 
 trajectory:
-  length: 3
+  length: 9
   stride: 4
 
 train:
@@ -16,7 +16,7 @@ train:
   accumulation: 1
   ema_decay: 0.999
 
-masking: false
+masking: true
 
 ae_from: ???
 fork_from: null
