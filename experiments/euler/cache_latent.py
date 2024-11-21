@@ -145,7 +145,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Files
-    datasets = "~/ceph/the_well/datasets"
+    datasets = os.path.expanduser("~/ceph/the_well/datasets")
     path = os.path.join(datasets, args.physics, "data", args.split)
 
     files = glob.glob("*.hdf5", root_dir=path) + glob.glob("*.h5", root_dir=path)
