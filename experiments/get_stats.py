@@ -21,14 +21,14 @@ def get_stats(
     from tabulate import tabulate
     from torch.utils.data import DataLoader
 
-    from lpdm.data import field_preprocess, get_well_dataset
+    from lpdm.data import field_preprocess, get_well_multi_dataset
     from lpdm.utils import process_cpu_count
 
     print(OmegaConf.to_yaml(dataset), flush=True)
     print()
 
     # Data
-    trainset = get_well_dataset(
+    trainset = get_well_multi_dataset(
         path=datasets,
         physics=dataset.physics,
         split="train",
@@ -49,6 +49,8 @@ def get_stats(
     )
 
     # Fetch
+    mins = []
+    maxs = []
     first_moments = []
     second_moments = []
 
@@ -57,13 +59,19 @@ def get_stats(
         x = preprocess(x)
         x = rearrange(x, "... C -> (...) C")
 
+        mins.append(x.min(dim=0).values)
+        maxs.append(x.max(dim=0).values)
         first_moments.append(x.mean(dim=0))
         second_moments.append(x.square().mean(dim=0))
 
+    mins = torch.stack(mins).min(dim=0).values
+    maxs = torch.stack(maxs).max(dim=0).values
     first_moments = torch.stack(first_moments).mean(dim=0)
     second_moments = torch.stack(second_moments).mean(dim=0)
 
     stats = {
+        "min": mins.tolist(),
+        "max": maxs.tolist(),
         "mean": first_moments.tolist(),
         "std": torch.sqrt(second_moments - first_moments**2).tolist(),
     }

@@ -25,7 +25,7 @@ all = [
   "pre-commit==3.8.0",
   "pytest==8.3.2",
   "ruff==0.6.4",
-  "the_well @ git+https://github.com/PolymathicAI/the_well@85816db",
+  "the_well @ git+https://github.com/PolymathicAI/the_well@3094ac0",
   "wandb==0.17.9",
 ]
 

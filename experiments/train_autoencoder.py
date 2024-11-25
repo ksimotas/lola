@@ -300,7 +300,7 @@ if __name__ == "__main__":
 
     # Config
     cfg = compose(
-        config_file="../configs/default_autoencoder.yaml",
+        config_file="./configs/default_autoencoder.yaml",
         overrides=args.overrides,
     )
 

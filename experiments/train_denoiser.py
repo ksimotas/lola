@@ -364,7 +364,7 @@ if __name__ == "__main__":
 
     # Config
     cfg = compose(
-        config_file="../configs/default_denoiser.yaml",
+        config_file="./configs/default_denoiser.yaml",
         overrides=args.overrides,
     )
 

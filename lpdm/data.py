@@ -21,6 +21,14 @@ import os
 import random
 import torch
 
+from the_well.data import WellDataset
+from the_well.data.augmentation import (
+    Augmentation,
+    Compose,
+    RandomAxisFlip,
+    RandomAxisPermute,
+    RandomAxisRoll,
+)
 from torch import Tensor
 from torch.utils.data import (
     ConcatDataset,
@@ -30,18 +38,6 @@ from torch.utils.data import (
     IterableDataset,
 )
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, Union
-
-try:
-    from the_well.benchmark.data.augmentation import (
-        Augmentation,
-        Compose,
-        RandomAxisFlip,
-        RandomAxisPermute,
-    )
-    from the_well.benchmark.data.datasets import GenericWellDataset
-except ImportError:
-    pass
-
 
 TRANSFORMS = {
     "log": (torch.log, torch.exp),
@@ -152,6 +148,8 @@ def compose_augmentation(*names: str) -> Augmentation:
             augmentations.append(RandomAxisFlip())
         elif name == "random_axis_permute":
             augmentations.append(RandomAxisPermute())
+        elif name == "random_axis_roll":
+            augmentations.append(RandomAxisRoll())
         else:
             raise NotImplementedError()
 
@@ -183,7 +181,7 @@ def get_well_dataset(
     exclude_filters: Sequence[str] = (),
     augment: Sequence[str] = (),
     **kwargs,
-) -> GenericWellDataset:
+) -> WellDataset:
     r"""Instantiates a dataset from the Well.
 
     Arguments:
@@ -193,7 +191,7 @@ def get_well_dataset(
         steps: The number of time steps in the trajectories.
         include_filters: Include files whose name contains any of these strings.
         exclude_filters: Exclude files whose name contains any of these strings
-        kwargs: Keyword arguments passed to :class:`GenericWellDataset`.
+        kwargs: Keyword arguments passed to :class:`the_well.data.WellDataset`.
 
     Returns:
         A dataset from the Well.
@@ -220,7 +218,7 @@ def get_well_dataset(
     else:
         augmentation = None
 
-    return GenericWellDataset(
+    return WellDataset(
         path=path,
         n_steps_input=steps,
         n_steps_output=0,
