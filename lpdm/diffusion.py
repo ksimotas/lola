@@ -16,7 +16,7 @@ from azula.nn.utils import FlattenWrapper
 from azula.noise import Schedule, VESchedule
 from omegaconf import DictConfig
 from torch import BoolTensor, Tensor
-from torch.distributions import Beta, Distribution, Kumaraswamy
+from torch.distributions import Beta, Distribution, Kumaraswamy, Uniform
 from torch.nn.parallel import DistributedDataParallel
 from typing import Dict, Optional, Sequence, Tuple, Union
 
@@ -191,7 +191,9 @@ class DenoiserLoss(nn.Module):
     def prior(self) -> Distribution:
         r"""Returns the time prior :math:`p(t)`."""
 
-        if self.distribution == "beta":
+        if self.distribution == "uniform":
+            return Uniform(self.a, self.b)
+        elif self.distribution == "beta":
             return Beta(self.a, self.b)
         elif self.distribution == "kumaraswamy":
             return Kumaraswamy(self.a, self.b)
