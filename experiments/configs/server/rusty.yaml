@@ -1,0 +1,4 @@
+name: "rusty"
+partition: "gpu"
+constraint: "h100|a100-80gb"
+datasets: "/mnt/ceph/users/polymathic/the_well/datasets"

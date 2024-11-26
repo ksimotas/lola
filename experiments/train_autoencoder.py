@@ -10,11 +10,7 @@ from omegaconf import DictConfig
 from lpdm.hydra import compose
 
 
-def train(
-    runid: str,
-    cfg: DictConfig,
-    datasets: str = "~/ceph/the_well/datasets",
-):
+def train(runid: str, cfg: DictConfig):
     import os
     import torch
     import torch.distributed as dist
@@ -70,7 +66,9 @@ def train(
         }
     else:
         stem = wandb.Api().run(path=cfg.fork_from)
-        stem_path = Path(stem.config["path"])
+        stem_dir = os.path.basename(stem.config["path"])
+        stem_path = Path(f"~/ceph/mpp-ldm/runs/{stem_dir}")
+        stem_path = stem_path.expanduser().resolve()
         stem_state = torch.load(stem_path / f"{cfg.fork_target}.pth", weights_only=True)
 
         counter = {
@@ -81,7 +79,7 @@ def train(
 
     # Data
     trainset = get_well_multi_dataset(
-        path=datasets,
+        path=cfg.server.datasets,
         physics=cfg.dataset.physics,
         split="train",
         steps=1,
@@ -101,7 +99,7 @@ def train(
     )
 
     validset = get_well_multi_dataset(
-        path=datasets,
+        path=cfg.server.datasets,
         physics=cfg.dataset.physics,
         split="valid",
         steps=1,
@@ -292,7 +290,6 @@ if __name__ == "__main__":
     parser.add_argument("overrides", nargs="*", type=str)
     parser.add_argument("--cpus-per-gpu", type=int, default=8)
     parser.add_argument("--gpus", type=int, default=4)
-    parser.add_argument("--gpuxl", action="store_true", default=False)
     parser.add_argument("--ram", type=str, default="256GB")
     parser.add_argument("--time", type=str, default="2-00:00:00")
 
@@ -304,25 +301,19 @@ if __name__ == "__main__":
         overrides=args.overrides,
     )
 
-    if args.gpuxl:
-        datasets = "/mnt/gpuxl/polymathic/the_well/datasets"
-    else:
-        datasets = "~/ceph/the_well/datasets"
-
     # Job
     runid = wandb.util.generate_id()
 
     dawgz.schedule(
         dawgz.job(
-            f=partial(train, runid, cfg, datasets),
+            f=partial(train, runid, cfg),
             name=f"auto-encoder {runid}",
             cpus=args.cpus_per_gpu * args.gpus,
             gpus=args.gpus,
             ram=args.ram,
             time=args.time,
-            partition="gpuxl" if args.gpuxl else "gpu",
-            constraint="h100|a100-80gb",
-            exclude="workergpu166",
+            partition=cfg.server.partition,
+            constraint=cfg.server.constraint,
         ),
         name=f"training auto-encoder {runid}",
         backend="slurm",

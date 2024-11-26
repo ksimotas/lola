@@ -70,7 +70,9 @@ def train(runid: str, cfg: DictConfig):
         }
     else:
         stem = wandb.Api().run(path=cfg.fork_from)
-        stem_path = Path(stem.config["path"])
+        stem_dir = os.path.basename(stem.config["path"])
+        stem_path = Path(f"~/ceph/mpp-ldm/runs/{stem_dir}")
+        stem_path = stem_path.expanduser().resolve()
         stem_state = torch.load(stem_path / f"{cfg.fork_target}.pth", weights_only=True)
 
         counter = {
@@ -356,7 +358,6 @@ if __name__ == "__main__":
     parser.add_argument("overrides", nargs="*", type=str)
     parser.add_argument("--cpus-per-gpu", type=int, default=8)
     parser.add_argument("--gpus", type=int, default=8)
-    parser.add_argument("--gpuxl", action="store_true", default=False)
     parser.add_argument("--ram", type=str, default="512GB")
     parser.add_argument("--time", type=str, default="7-00:00:00")
 
@@ -379,9 +380,8 @@ if __name__ == "__main__":
             gpus=args.gpus,
             ram=args.ram,
             time=args.time,
-            partition="gpuxl" if args.gpuxl else "gpu",
-            constraint="h100|a100-80gb",
-            exclude="workergpu166",
+            partition=cfg.server.partition,
+            constraint=cfg.server.partition,
         ),
         name=f"training denoiser {runid}",
         backend="slurm",

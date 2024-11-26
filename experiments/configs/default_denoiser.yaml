@@ -4,6 +4,7 @@ defaults:
   - denoiser/loss: beta
   - denoiser/schedule: log_logit
   - optim: soap
+  - server: rusty
 
 trajectory:
   length: 9

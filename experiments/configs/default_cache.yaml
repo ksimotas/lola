@@ -1,0 +1,8 @@
+defaults:
+  - server: rusty
+
+autoencoder: ???
+physics: "euler_multi_quadrants_openBC"
+split: "train"
+augment: []
+repeat: 1

@@ -1,0 +1,4 @@
+name: "empire"
+partition: "cuny"
+constraint: ""
+datasets: "/mnt/lustre/cuny/frozet/the_well/datasets"

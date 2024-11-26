@@ -3,6 +3,7 @@ defaults:
   - ae/loss: mae
   - dataset: euler_all
   - optim: soap
+  - server: rusty
 
 train:
   epochs: 1024

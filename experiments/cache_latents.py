@@ -7,6 +7,8 @@ import os
 
 from typing import Sequence
 
+from lpdm.hydra import compose
+
 
 def cache_latent(
     autoencoder: str,
@@ -14,8 +16,8 @@ def cache_latent(
     split: str,
     file: str,
     augment: Sequence[str] = (),
-    duplicate: int = 1,
-    datasets: str = "~/ceph/the_well/datasets",
+    repeat: int = 1,
+    datasets: str = "/mnt/ceph/users/polymathic/the_well/datasets",
 ):
     import h5py
     import numpy as np
@@ -89,7 +91,7 @@ def cache_latent(
         for i in trange(len(dataset), ncols=88, ascii=True):
             visited = []
 
-            for j in range(duplicate):
+            for j in range(repeat):
                 while True:
                     batch = dataset[i]
 
@@ -117,51 +119,48 @@ def cache_latent(
                 if "state" not in f:
                     f.create_dataset(
                         "state",
-                        shape=(len(dataset) * duplicate, *z.shape),
+                        shape=(len(dataset) * repeat, *z.shape),
                         dtype=np.float32,
                     )
 
                 if "label" not in f:
                     f.create_dataset(
                         "label",
-                        shape=(len(dataset) * duplicate, *label.shape),
+                        shape=(len(dataset) * repeat, *label.shape),
                         dtype=np.float32,
                     )
 
-                f["state"][i * duplicate + j] = z.numpy(force=True)
-                f["label"][i * duplicate + j] = label.numpy(force=True)
+                f["state"][i * repeat + j] = z.numpy(force=True)
+                f["label"][i * repeat + j] = label.numpy(force=True)
 
 
 if __name__ == "__main__":
     # Parser
     parser = argparse.ArgumentParser()
-    parser.add_argument("autoencoder", type=str)
-    parser.add_argument("--physics", default="euler_multi_quadrants_openBC", type=str)
-    parser.add_argument("--split", default="train", type=str)
-    parser.add_argument("--filters", nargs="*", type=str)
-    parser.add_argument("--augment", nargs="*", type=str)
-    parser.add_argument("--duplicate", default=1, type=int)
+    parser.add_argument("overrides", nargs="*", type=str)
 
     args = parser.parse_args()
 
+    # Config
+    cfg = compose(
+        config_file="./configs/default_cache.yaml",
+        overrides=args.overrides,
+    )
+
     # Files
-    datasets = os.path.expanduser("~/ceph/the_well/datasets")
-    path = os.path.join(datasets, args.physics, "data", args.split)
-
+    path = os.path.join(cfg.server.datasets, cfg.physics, "data", cfg.split)
     files = glob.glob("*.hdf5", root_dir=path) + glob.glob("*.h5", root_dir=path)
-
-    if args.filters:
-        files = [file for file in files if any(filtr in file for filtr in args.filters)]
 
     # Job(s)
     def launch(i: int):
         cache_latent(
-            autoencoder=args.autoencoder,
-            physics=args.physics,
-            split=args.split,
+            autoencoder=cfg.autoencoder,
+            physics=cfg.physics,
+            split=cfg.split,
             file=files[i],
-            augment=args.augment,
-            duplicate=args.duplicate,
+            augment=cfg.augment,
+            repeat=cfg.repeat,
+            datasets=cfg.server.datasets,
         )
 
     dawgz.schedule(
@@ -173,10 +172,10 @@ if __name__ == "__main__":
             gpus=1,
             ram="64GB",
             time="06:00:00",
-            partition="gpu",
-            constraint="h100|a100",
+            partition=cfg.server.partition,
+            constraint=cfg.server.constraint,
         ),
-        name=f"caching {args.physics}/{args.split}",
+        name=f"caching {cfg.physics}/{cfg.split}",
         backend="slurm",
         env=[
             "export XDG_CACHE_HOME=$HOME/.cache",
