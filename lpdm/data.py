@@ -307,7 +307,7 @@ def isotropic_power_spectrum(
     Adapted from :func:`the_well.benchmark.metrics.spectral.power_spectrum`.
 
     Arguments:
-        x: A field tensor, with shape :math:`(*, H_1, ..., H_N,)`.
+        x: A field tensor, with shape :math:`(*, H_1, ..., H_N)`.
         edges: The wavelength bin edges, with shape :math:`(L + 1)`.
         spatial: The number of spatial dimensions :math:`N`.
 
