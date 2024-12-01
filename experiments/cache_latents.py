@@ -42,6 +42,8 @@ def cache_latent(
 
     cache_path = runpath / "cache" / physics / split / file
 
+    print(f"caching {physics}/{split}/{file}")
+
     # Data
     dataset = get_well_dataset(
         path=datasets,
