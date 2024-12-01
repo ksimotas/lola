@@ -7,4 +7,4 @@ transform: {}
 stats:
   mean: [0.38, 0.01, 0.00, 0.00]
   std: [0.25, 0.15, 0.21, 0.18]
-augment: ["random_axis_flip", "random_axis_roll"]
+augment: ["log_scalars", "random_axis_flip", "random_axis_roll"]

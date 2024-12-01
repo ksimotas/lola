@@ -29,6 +29,7 @@ from the_well.data.augmentation import (
     RandomAxisPermute,
     RandomAxisRoll,
 )
+from the_well.data.datasets import TrajectoryData, TrajectoryMetadata
 from torch import Tensor
 from torch.utils.data import (
     ConcatDataset,
@@ -140,6 +141,19 @@ def find_hdf5(
     return files
 
 
+class LogScalars(Augmentation):
+    def __call__(self, data: TrajectoryData, metadata: TrajectoryMetadata) -> TrajectoryData:
+        scalars = data["constant_scalars"]
+
+        for key, value in scalars.items():
+            if key.lower() in ("rayleigh", "prandtl"):
+                scalars[key] = value.log()
+
+        data["constant_scalars"] = scalars
+
+        return data
+
+
 def compose_augmentation(*names: str) -> Augmentation:
     augmentations = []
 
@@ -150,6 +164,8 @@ def compose_augmentation(*names: str) -> Augmentation:
             augmentations.append(RandomAxisPermute())
         elif name == "random_axis_roll":
             augmentations.append(RandomAxisRoll())
+        elif name == "log_scalars":
+            augmentations.append(LogScalars())
         else:
             raise NotImplementedError()
 
