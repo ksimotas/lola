@@ -225,7 +225,8 @@ def train(runid: str, cfg: DictConfig):
 
             if (i + 1) % cfg.train.accumulation == 0:
                 loss = denoiser_loss(denoiser, z, mask=mask, label=label)
-                loss.backward()
+                loss_acc = loss / cfg.train.accumulation
+                loss_acc.backward()
 
                 grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
                 grads.append(grad_norm)
@@ -237,7 +238,8 @@ def train(runid: str, cfg: DictConfig):
             else:
                 with denoiser.no_sync():
                     loss = denoiser_loss(denoiser, z, mask=mask, label=label)
-                    loss.backward()
+                    loss_acc = loss / cfg.train.accumulation
+                    loss_acc.backward()
 
             losses.append(loss.detach())
 

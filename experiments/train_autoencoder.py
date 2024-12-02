@@ -179,7 +179,8 @@ def train(runid: str, cfg: DictConfig):
             if (i + 1) % cfg.train.accumulation == 0:
                 y, z = autoencoder(x)
                 loss = autoencoder_loss(x, y)
-                loss.backward()
+                loss_acc = loss / cfg.train.accumulation
+                loss_acc.backward()
 
                 grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
                 grads.append(grad_norm)
@@ -190,7 +191,8 @@ def train(runid: str, cfg: DictConfig):
                 with autoencoder.no_sync():
                     y, z = autoencoder(x)
                     loss = autoencoder_loss(x, y)
-                    loss.backward()
+                    loss_acc = loss / cfg.train.accumulation
+                    loss_acc.backward()
 
             losses.append(loss.detach())
 
