@@ -82,27 +82,8 @@ def get_optimizer(
         optimizer = torch.optim.AdamW(
             params,
             lr=learning_rate,
-            betas=(betas[0], betas[1]),
+            betas=betas[:2],
             weight_decay=weight_decay,
-        )
-    elif optimizer == "shampoo":
-        from distributed_shampoo.distributed_shampoo import DistributedShampoo
-        from distributed_shampoo.shampoo_types import AdamGraftingConfig
-
-        optimizer = DistributedShampoo(
-            params,
-            lr=learning_rate,
-            betas=(betas[0], betas[1]),
-            beta3=betas[2],
-            epsilon=1e-12,
-            weight_decay=weight_decay,
-            use_decoupled_weight_decay=True,
-            precondition_frequency=precondition_frequency,
-            max_preconditioner_dim=precondition_dim,
-            grafting_config=AdamGraftingConfig(
-                beta2=betas[1],
-                epsilon=1e-8,
-            ),
         )
     elif optimizer == "soap":
         optimizer = SOAP(
