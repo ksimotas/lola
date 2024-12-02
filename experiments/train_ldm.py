@@ -365,7 +365,7 @@ if __name__ == "__main__":
 
     # Config
     cfg = compose(
-        config_file="./configs/default_denoiser.yaml",
+        config_file="./configs/default_ldm.yaml",
         overrides=args.overrides,
     )
 
@@ -375,15 +375,15 @@ if __name__ == "__main__":
     dawgz.schedule(
         dawgz.job(
             f=partial(train, runid, cfg),
-            name=f"denoiser {runid}",
+            name=f"ldm {runid}",
             cpus=args.cpus_per_gpu * args.gpus,
             gpus=args.gpus,
             ram=args.ram,
             time=args.time,
             partition=cfg.server.partition,
-            constraint=cfg.server.partition,
+            constraint=cfg.server.constraint,
         ),
-        name=f"training denoiser {runid}",
+        name=f"training ldm {runid}",
         backend="slurm",
         interpreter=f"torchrun --nnodes 1 --nproc-per-node {args.gpus} --standalone",
         env=[
