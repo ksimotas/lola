@@ -47,6 +47,17 @@ TRANSFORMS = {
 }
 
 
+def get_label(item: Dict[str, Tensor]):
+    r"""Returns the label of an item."""
+
+    scalars = item["constant_scalars"]
+    bcs = item["boundary_conditions"]
+
+    *batch, _ = scalars.shape
+
+    return torch.cat((scalars, bcs.reshape(*batch, -1)), dim=-1)
+
+
 def field_preprocess(
     x: Tensor,
     mean: Optional[Tensor] = None,

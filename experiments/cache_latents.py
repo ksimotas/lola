@@ -29,7 +29,7 @@ def cache_latent(
     from pathlib import Path
     from tqdm import trange
 
-    from lpdm.data import field_preprocess, get_well_dataset
+    from lpdm.data import field_preprocess, get_label, get_well_dataset
     from lpdm.diffusion import get_autoencoder
 
     device = torch.device("cuda")
@@ -113,10 +113,7 @@ def cache_latent(
                 with torch.no_grad():
                     z = autoencoder.encode(x)
 
-                label = torch.cat([
-                    batch["constant_scalars"].reshape(-1),
-                    batch["boundary_conditions"].reshape(-1),
-                ])
+                label = get_label(batch)
 
                 if "state" not in f:
                     f.create_dataset(
