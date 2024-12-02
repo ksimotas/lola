@@ -305,6 +305,7 @@ def get_denoiser(
     kernel_size: Union[int, Sequence[int]] = 3,
     stride: Union[int, Sequence[int]] = 2,
     norm: str = "layer",
+    periodic: bool = False,
     # Label
     label_features: int = 0,
     # Ignore
@@ -342,6 +343,7 @@ def get_denoiser(
             norm=norm,
             attention_heads=attention_heads,
             spatial=len(shape) - 1,
+            periodic=periodic,
             dropout=dropout,
         )
     else:

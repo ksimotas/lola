@@ -7,4 +7,5 @@ hid_blocks: [3, 3, 3, 3]
 stride: [1, 2, 2]
 norm: "layer"
 attention_heads: {2: 6, 3: 8}
+periodic: false
 dropout: 0.05
