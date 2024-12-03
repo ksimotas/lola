@@ -148,13 +148,13 @@ def train(runid: str, cfg: DictConfig):
         seed=cfg.seed,
     )
 
-    item = validset[0]
-    item["state"] = rearrange(item["state"], "L C H W -> C L H W")
+    batch = next(valid_loader)
+    batch["state"] = rearrange(batch["state"], "B L C H W -> B C L H W")
 
     # Model, optimizer & scheduler
     denoiser = get_denoiser(
-        shape=item["state"].shape,
-        label_features=item["label"].numel(),
+        shape=batch["state"].shape[1:],
+        label_features=batch["label"].shape[1],
         **cfg.denoiser,
     ).to(device)
 

@@ -127,14 +127,14 @@ def train(runid: str, cfg: DictConfig):
         transform=cfg.dataset.transform,
     )
 
-    item = validset[0]
-    item["input_fields"] = rearrange(item["input_fields"], "L H W C -> C L H W")
-    item["label"] = get_label(item)
+    batch = next(valid_loader)
+    batch["input_fields"] = rearrange(batch["input_fields"], "B L H W C -> B C L H W")
+    batch["label"] = get_label(batch)
 
     # Model, optimizer & scheduler
     denoiser = get_denoiser(
-        shape=item["input_fields"].shape,
-        label_features=item["label"].numel(),
+        shape=batch["input_fields"].shape[1:],
+        label_features=batch["label"].shape[1],
         **cfg.denoiser,
     ).to(device)
 
