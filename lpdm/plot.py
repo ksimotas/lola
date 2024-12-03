@@ -17,6 +17,7 @@ def animate_fields(
     timesteps: Optional[Sequence[int]] = None,
     cmap: str = "RdBu_r",
     figsize: Tuple[float, float] = (2.4, 2.4),
+    wait: float = 0.2,
 ) -> ani.Animation:
     L, _, _, C = x.shape
 
@@ -101,7 +102,7 @@ def animate_fields(
     fig.align_labels()
     fig.tight_layout()
 
-    return ani.FuncAnimation(fig, animate, frames=L, interval=250)
+    return ani.FuncAnimation(fig, animate, frames=L, interval=int(1000 * wait))
 
 
 def draw_fields(
@@ -241,7 +242,7 @@ def draw_grid(
 def save_gif(
     x: ArrayLike,
     file: str,
-    dt: float = 0.2,
+    wait: float = 0.2,
     **kwargs,
 ):
     x = field2rgb(x, **kwargs)
@@ -252,6 +253,6 @@ def save_gif(
         format="GIF",
         save_all=True,
         append_images=imgs[1:],
-        duration=int(1000 * dt),
+        duration=int(1000 * wait),
         loop=0,
     )
