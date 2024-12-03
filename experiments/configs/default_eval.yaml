@@ -1,0 +1,12 @@
+defaults:
+  - server: rusty
+
+run: ???
+target: "state_ema"
+split: "valid"
+samples: 16
+context: 1
+rollout: 64
+sampling:
+  alg: "lms"
+  steps: 64

@@ -11,7 +11,7 @@ from lpdm.hydra import compose
 
 
 def cache_latent(
-    autoencoder: str,
+    run: str,
     physics: str,
     split: str,
     file: str,
@@ -35,7 +35,7 @@ def cache_latent(
     device = torch.device("cuda")
 
     # Config
-    runpath = Path(autoencoder)
+    runpath = Path(run)
     runpath = runpath.expanduser().resolve(strict=True)
 
     cfg = OmegaConf.load(runpath / "config.yaml")
@@ -153,7 +153,7 @@ if __name__ == "__main__":
     # Job(s)
     def launch(i: int):
         cache_latent(
-            autoencoder=cfg.autoencoder,
+            run=cfg.run,
             physics=cfg.physics,
             split=cfg.split,
             file=files[i],
@@ -174,7 +174,7 @@ if __name__ == "__main__":
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
         ),
-        name=f"caching {cfg.physics}/{cfg.split}",
+        name=f"cache {os.path.basename(cfg.run)}",
         backend="slurm",
         env=[
             "export XDG_CACHE_HOME=$HOME/.cache",

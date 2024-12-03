@@ -1,7 +1,7 @@
 defaults:
   - server: rusty
 
-autoencoder: ???
+run: ???
 physics: "euler_multi_quadrants_openBC"
 split: "train"
 augment: []
