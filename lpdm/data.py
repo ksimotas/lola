@@ -265,6 +265,7 @@ def get_dataloader(
     num_workers: int = 1,
     persistent_workers: bool = True,
     pin_memory: bool = True,
+    prefetch_factor: Optional[int] = None,
     rank: Optional[int] = None,
     world_size: Optional[int] = None,
     seed: int = 0,
@@ -306,6 +307,7 @@ def get_dataloader(
         worker_init_fn=worker_init_fn,
         persistent_workers=persistent_workers,
         pin_memory=pin_memory,
+        prefetch_factor=prefetch_factor,
     )
 
     if infinite:

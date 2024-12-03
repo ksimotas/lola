@@ -90,7 +90,7 @@ def train(runid: str, cfg: DictConfig):
     train_loader = get_dataloader(
         dataset=trainset,
         batch_size=cfg.train.batch_size // world_size,
-        shuffle="lazy" if cfg.train.lazy_shuffle else True,
+        shuffle=True,
         infinite=True,
         num_workers=process_cpu_count() // world_size,
         rank=rank,
