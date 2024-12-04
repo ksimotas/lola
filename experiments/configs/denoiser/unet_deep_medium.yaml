@@ -6,6 +6,6 @@ hid_channels: [32, 64, 128, 256, 512, 768, 1024]
 hid_blocks: [1, 2, 3, 3, 3, 3, 3]
 stride: [1, 2, 2]
 norm: "layer"
-attention_heads: {6: 8}
+attention_heads: {}
 periodic: false
 dropout: 0.05
