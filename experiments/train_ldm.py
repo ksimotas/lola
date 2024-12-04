@@ -155,6 +155,7 @@ def train(runid: str, cfg: DictConfig):
     denoiser = get_denoiser(
         shape=batch["state"].shape[1:],
         label_features=batch["label"].shape[1],
+        masked=True,
         **cfg.denoiser,
     ).to(device)
 
@@ -209,19 +210,15 @@ def train(runid: str, cfg: DictConfig):
             z = z.to(device, non_blocking=True)
             z = rearrange(z, "B L C H W -> B C L H W")
 
-            if cfg.masking:
-                mask = torch.rand(
-                    (z.shape[0], 1, z.shape[2], 1, 1),
-                    dtype=z.dtype,
-                    device=z.device,
-                )
-                mask = mask < 1 / z.shape[2]
-                mask = mask.expand(z.shape).contiguous()
-            else:
-                mask = None
-
             label = batch["label"]
             label = label.to(device, non_blocking=True)
+
+            mask = torch.rand(
+                (z.shape[0], 1, z.shape[2], 1, 1),
+                dtype=z.dtype,
+                device=z.device,
+            )
+            mask = mask < 1 / z.shape[2]
 
             if (i + 1) % cfg.train.accumulation == 0:
                 loss = denoiser_loss(denoiser, z, mask=mask, label=label)
@@ -284,19 +281,15 @@ def train(runid: str, cfg: DictConfig):
                 z = z.to(device, non_blocking=True)
                 z = rearrange(z, "B L C H W -> B C L H W")
 
-                if cfg.masking:
-                    mask = torch.rand(
-                        (z.shape[0], 1, z.shape[2], 1, 1),
-                        dtype=z.dtype,
-                        device=z.device,
-                    )
-                    mask = mask < 1 / z.shape[2]
-                    mask = mask.expand(z.shape).contiguous()
-                else:
-                    mask = None
-
                 label = batch["label"]
                 label = label.to(device, non_blocking=True)
+
+                mask = torch.rand(
+                    (z.shape[0], 1, z.shape[2], 1, 1),
+                    dtype=z.dtype,
+                    device=z.device,
+                )
+                mask = mask < 1 / z.shape[2]
 
                 loss = denoiser_loss(denoiser, z, mask=mask, label=label)
                 losses.append(loss)

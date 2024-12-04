@@ -64,7 +64,7 @@ class DiTBlock(nn.Module):
 
         ## RoPE
         if rope:
-            amplitude = 1e4 ** -torch.rand(channels // 2)
+            amplitude = 1e2 ** -torch.rand(channels // 2)
             direction = torch.nn.functional.normalize(torch.randn(spatial, channels // 2), dim=0)
 
             self.theta = nn.Parameter(amplitude * direction)
@@ -121,6 +121,7 @@ class DiT(nn.Module):
     Arguments:
         in_channels: The number of input channels :math:`C_i`.
         out_channels: The number of output channels :math:`C_o`.
+        cond_channels: The number of condition channels :math:`C_c`.
         mod_features: The number of modulating features :math:`D`.
         hid_channels: The numbers of hidden token channels.
         hid_blocks: The number of hidden transformer blocks.
@@ -137,7 +138,8 @@ class DiT(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        mod_features: int,
+        cond_channels: int = 0,
+        mod_features: int = 0,
         hid_channels: int = 1024,
         hid_blocks: int = 3,
         attention_heads: int = 1,
@@ -176,7 +178,9 @@ class DiT(nn.Module):
         else:
             raise NotImplementedError()
 
-        self.in_proj = nn.Linear(math.prod(patch_size) * in_channels, hid_channels)
+        self.in_proj = nn.Linear(
+            math.prod(patch_size) * (in_channels + cond_channels), hid_channels
+        )
         self.out_proj = nn.Linear(hid_channels, math.prod(patch_size) * out_channels)
 
         self.positional_embedding = nn.Sequential(
@@ -235,16 +239,26 @@ class DiT(nn.Module):
 
         return indices.to(dtype=dtype), mask
 
-    def forward(self, x: Tensor, mod: Tensor, early_out: Optional[int] = None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        mod: Tensor,
+        cond: Optional[Tensor] = None,
+        early_out: Optional[int] = None,
+    ) -> Tensor:
         r"""
         Arguments:
             x: The input tensor, with shape :math:`(B, C_i, L_1, ..., L_N)`.
             mod: The modulation vector, with shape :math:`(D)` or :math:`(B, D)`.
+            cond: The condition tensor, with :math:`(B, C_c, L_1, ..., L_N)`.
             early_out: The number of blocks after which the output is returned.
 
         Returns:
             The output tensor, with shape :math:`(B, C_o, L_1, ..., L_N)`.
         """
+
+        if cond is not None:
+            x = torch.cat((x, cond), dim=1)
 
         x = self.patch(x)
         x = self.in_proj(x)

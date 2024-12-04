@@ -12,6 +12,7 @@ __all__ = [
 import torch
 import torch.nn as nn
 
+from einops import repeat
 from einops.layers.torch import Rearrange
 from torch import Tensor
 from typing import Dict, Optional, Sequence, Union
@@ -115,6 +116,7 @@ class UNet(nn.Module):
     Arguments:
         in_channels: The number of input channels :math:`C_i`.
         out_channels: The number of output channels :math:`C_o`.
+        cond_channels: The number of condition channels :math:`C_c`.
         mod_features: The number of modulating features :math:`D`.
         hid_channels: The numbers of channels at each depth.
         hid_blocks: The numbers of hidden blocks at each depth.
@@ -131,7 +133,8 @@ class UNet(nn.Module):
         self,
         in_channels: int,
         out_channels: int,
-        mod_features: int,
+        cond_channels: int = 0,
+        mod_features: int = 0,
         hid_channels: Sequence[int] = (64, 128, 256),
         hid_blocks: Sequence[int] = (3, 3, 3),
         kernel_size: Union[int, Sequence[int]] = 3,
@@ -203,7 +206,15 @@ class UNet(nn.Module):
 
                 up.append(nn.Upsample(scale_factor=tuple(stride), mode="nearest"))
             else:
-                do.insert(0, ConvNd(in_channels, hid_channels[i], spatial=spatial, **kwargs))
+                do.insert(
+                    0,
+                    ConvNd(
+                        in_channels + cond_channels + spatial,
+                        hid_channels[i],
+                        spatial=spatial,
+                        **kwargs,
+                    ),
+                )
                 up.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
 
             if i + 1 < len(hid_blocks):
@@ -221,15 +232,28 @@ class UNet(nn.Module):
             self.descent.append(do)
             self.ascent.insert(0, up)
 
-    def forward(self, x: Tensor, mod: Tensor) -> Tensor:
+    def forward(self, x: Tensor, mod: Tensor, cond: Optional[Tensor] = None) -> Tensor:
         r"""
         Arguments:
             x: The input tensor, with shape :math:`(B, C_i, L_1, ..., L_N)`.
             mod: The modulation vector, with shape :math:`(D)` or :math:`(B, D)`.
+            cond: The condition tensor, with :math:`(B, C_c, L_1, ..., L_N)`.
 
         Returns:
             The output tensor, with shape :math:`(B, C_o, L_1, ..., L_N)`.
         """
+
+        B, _, *shape = x.shape
+
+        p = (torch.linspace(-1, 1, steps=size, device=x.device) for size in shape)
+        p = torch.cartesian_prod(*p)
+        p = torch.reshape(p, shape=(*shape, -1))
+        p = repeat(p, "... C -> B C ...", B=B)
+
+        if cond is None:
+            x = torch.cat((x, p), dim=1)
+        else:
+            x = torch.cat((x, p, cond), dim=1)
 
         memory = []
 

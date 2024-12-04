@@ -1,7 +1,6 @@
 r"""Diffusion building blocks."""
 
 __all__ = [
-    "ImprovedPreconditionedDenoiser",
     "DenoiserLoss",
     "get_autoencoder",
     "get_denoiser",
@@ -11,7 +10,7 @@ import math
 import torch
 import torch.nn as nn
 
-from azula.denoise import Gaussian, GaussianDenoiser, PreconditionedDenoiser
+from azula.denoise import Gaussian, GaussianDenoiser
 from azula.nn.utils import FlattenWrapper
 from azula.noise import Schedule, VESchedule
 from omegaconf import DictConfig
@@ -107,8 +106,8 @@ class LogLogitSchedule(Schedule):
         return self.alpha(t).unsqueeze(-1), self.sigma(t).unsqueeze(-1)
 
 
-class ImprovedPreconditionedDenoiser(GaussianDenoiser):
-    r"""Creates an improved preconditioned denoiser.
+class PreconditionedDenoiser(GaussianDenoiser):
+    r"""Creates a Gaussian denoiser with EDM-style preconditioning.
 
     Arguments:
         backbone: A noise conditional network.
@@ -127,13 +126,11 @@ class ImprovedPreconditionedDenoiser(GaussianDenoiser):
         c_in = 1 / torch.sqrt(alpha_t**2 + sigma_t**2)
         c_out = sigma_t / torch.sqrt(alpha_t**2 + sigma_t**2)
         c_skip = alpha_t / (alpha_t**2 + sigma_t**2)
-        c_noise = torch.log(sigma_t / alpha_t).squeeze(dim=-1)
+        c_noise = 1e3 * sigma_t / torch.sqrt(alpha_t**2 + sigma_t**2)
+        c_noise = c_noise.squeeze(dim=-1)
 
-        output = self.backbone(c_in * x_t, c_noise, **kwargs)
-        mean, log_var = torch.chunk(output, chunks=2, dim=-1)
-
-        mean = c_skip * x_t + c_out * mean
-        var = sigma_t**2 / (alpha_t**2 + sigma_t**2) * torch.exp(log_var)
+        mean = c_skip * x_t + c_out * self.backbone(c_in * x_t, c_noise, **kwargs)
+        var = sigma_t**2 / (alpha_t**2 + sigma_t**2)
 
         return Gaussian(mean=mean, var=var)
 
@@ -165,7 +162,7 @@ class MaskedDenoiser(GaussianDenoiser):
         return self.denoiser.schedule
 
     def forward(self, x_t: Tensor, t: Tensor, **kwargs) -> Gaussian:
-        alpha_t, sigma_t = self.schedule(t)
+        alpha_t, sigma_t = self.denoiser.schedule(t)
 
         x_t = torch.where(
             self.mask,
@@ -173,7 +170,7 @@ class MaskedDenoiser(GaussianDenoiser):
             x_t,
         )
 
-        return self.denoiser.forward(x_t, t, **kwargs)
+        return self.denoiser(x_t, t, **kwargs)
 
 
 class DenoiserLoss(nn.Module):
@@ -221,6 +218,9 @@ class DenoiserLoss(nn.Module):
         """
 
         B, *shape = x.shape
+
+        if mask is not None:
+            mask = kwargs.setdefault("cond", mask.expand(x.shape).contiguous())
 
         t = self.prior.sample((B,))
 
@@ -295,6 +295,7 @@ def get_denoiser(
     dropout: Optional[float] = None,
     # Denoiser
     improved: bool = False,
+    masked: bool = False,
     schedule: DictConfig = None,
     # DiT
     qk_norm: bool = True,
@@ -314,12 +315,15 @@ def get_denoiser(
 ) -> GaussianDenoiser:
     r"""Instantiates a denoiser."""
 
+    assert not improved, "'improved' is deprecated"
+
     channels, *_ = shape
 
     if arch == "dit":
         backbone = DiT(
             in_channels=channels,
-            out_channels=2 * channels if improved else channels,
+            out_channels=channels,
+            cond_channels=channels if masked else 0,
             mod_features=emb_features,
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
@@ -334,7 +338,8 @@ def get_denoiser(
     elif arch == "unet":
         backbone = UNet(
             in_channels=channels,
-            out_channels=2 * channels if improved else channels,
+            out_channels=channels,
+            cond_channels=channels if masked else 0,
             mod_features=emb_features,
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
@@ -376,9 +381,6 @@ def get_denoiser(
     elif schedule.name == "log_logit":
         schedule = LogLogitSchedule(sigma_min=schedule.sigma_min)
 
-    if improved:
-        denoiser = ImprovedPreconditionedDenoiser(backbone, schedule)
-    else:
-        denoiser = PreconditionedDenoiser(backbone, schedule)
+    denoiser = PreconditionedDenoiser(backbone, schedule)
 
     return denoiser

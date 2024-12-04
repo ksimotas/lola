@@ -17,8 +17,6 @@ train:
   accumulation: 1
   ema_decay: 0.9999
 
-masking: true
-
 ae_from: ???
 fork_from: null
 fork_target: "state"

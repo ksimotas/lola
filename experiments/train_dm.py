@@ -135,6 +135,7 @@ def train(runid: str, cfg: DictConfig):
     denoiser = get_denoiser(
         shape=batch["input_fields"].shape[1:],
         label_features=batch["label"].shape[1],
+        masked=True,
         **cfg.denoiser,
     ).to(device)
 
@@ -190,19 +191,15 @@ def train(runid: str, cfg: DictConfig):
             x = preprocess(x)
             x = rearrange(x, "B L H W C -> B C L H W")
 
-            if cfg.masking:
-                mask = torch.rand(
-                    (x.shape[0], 1, x.shape[2], 1, 1),
-                    dtype=x.dtype,
-                    device=x.device,
-                )
-                mask = mask < 1 / x.shape[2]
-                mask = mask.expand(x.shape).contiguous()
-            else:
-                mask = None
-
             label = get_label(batch)
             label = label.to(device, non_blocking=True)
+
+            mask = torch.rand(
+                (x.shape[0], 1, x.shape[2], 1, 1),
+                dtype=x.dtype,
+                device=x.device,
+            )
+            mask = mask < 1 / x.shape[2]
 
             if (i + 1) % cfg.train.accumulation == 0:
                 loss = denoiser_loss(denoiser, x, mask=mask, label=label)
@@ -266,19 +263,15 @@ def train(runid: str, cfg: DictConfig):
                 x = preprocess(x)
                 x = rearrange(x, "B L H W C -> B C L H W")
 
-                if cfg.masking:
-                    mask = torch.rand(
-                        (x.shape[0], 1, x.shape[2], 1, 1),
-                        dtype=x.dtype,
-                        device=x.device,
-                    )
-                    mask = mask < 1 / x.shape[2]
-                    mask = mask.expand(x.shape).contiguous()
-                else:
-                    mask = None
-
                 label = get_label(batch)
                 label = label.to(device, non_blocking=True)
+
+                mask = torch.rand(
+                    (x.shape[0], 1, x.shape[2], 1, 1),
+                    dtype=x.dtype,
+                    device=x.device,
+                )
+                mask = mask < 1 / x.shape[2]
 
                 loss = denoiser_loss(denoiser, x, mask=mask, label=label)
                 losses.append(loss)
