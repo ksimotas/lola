@@ -340,6 +340,7 @@ if __name__ == "__main__":
     # Parser
     parser = argparse.ArgumentParser()
     parser.add_argument("overrides", nargs="*", type=str)
+    parser.add_argument("--nodes", type=int, default=1)
     parser.add_argument("--cpus-per-gpu", type=int, default=8)
     parser.add_argument("--gpus", type=int, default=8)
     parser.add_argument("--ram", type=str, default="512GB")
@@ -356,6 +357,11 @@ if __name__ == "__main__":
     # Job
     runid = wandb.util.generate_id()
 
+    if args.nodes > 1:
+        interpreter = f"torchrun --nnodes {args.nodes} --nproc-per-node {args.gpus} --rdzv_backend=c10d --rdzv_endpoint=$SLURMD_NODENAME:12345 --rdzv_id=$SLURM_JOB_ID"
+    else:
+        interpreter = f"torchrun --nnodes 1 --nproc-per-node {args.gpus} --standalone"
+
     dawgz.schedule(
         dawgz.job(
             f=partial(train, runid, cfg),
@@ -369,7 +375,7 @@ if __name__ == "__main__":
         ),
         name=f"training dm {runid}",
         backend="slurm",
-        interpreter=f"torchrun --nnodes 1 --nproc-per-node {args.gpus} --standalone",
+        interpreter=interpreter,
         env=[
             "export OMP_NUM_THREADS=" + f"{args.cpus_per_gpu}",
             "export WANDB_SILENT=true",
