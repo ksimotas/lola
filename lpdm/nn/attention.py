@@ -32,7 +32,7 @@ class MultiheadSelfAttention(nn.Module):
         attention_heads: int = 1,
         qk_norm: bool = True,
         dropout: Optional[float] = None,
-        checkpointing: bool = True,
+        checkpointing: bool = False,
     ):
         super().__init__()
 

@@ -15,6 +15,7 @@ import torch.nn as nn
 from einops import repeat
 from einops.layers.torch import Rearrange
 from torch import Tensor
+from torch.utils.checkpoint import checkpoint
 from typing import Dict, Optional, Sequence, Union
 
 from .layers import ConvNd, LayerNorm, SelfAttentionNd
@@ -36,6 +37,7 @@ class UNetBlock(nn.Module):
         attention_heads: The number of attention heads.
         spatial: The number of spatial dimensions :math:`N`.
         dropout: The dropout rate in :math:`[0, 1]`.
+        checkpointing: Whether to use gradient checkpointing or not.
         kwargs: Keyword arguments passed to :class:`torch.nn.Conv2d`.
     """
 
@@ -48,9 +50,12 @@ class UNetBlock(nn.Module):
         attention_heads: Optional[int] = None,
         spatial: int = 2,
         dropout: Optional[float] = None,
+        checkpointing: bool = True,
         **kwargs,
     ):
         super().__init__()
+
+        self.checkpointing = checkpointing
 
         # Attention
         if attention_heads is None:
@@ -90,7 +95,7 @@ class UNetBlock(nn.Module):
             ConvNd(channels, channels, spatial=spatial, **kwargs),
         )
 
-    def forward(self, x: Tensor, mod: Tensor) -> Tensor:
+    def _forward(self, x: Tensor, mod: Tensor) -> Tensor:
         r"""
         Arguments:
             x: The input tensor, with shape :math:`(B, C, L_1, ..., L_N)`.
@@ -108,6 +113,16 @@ class UNetBlock(nn.Module):
         y = (x + c * y) * torch.rsqrt(1 + c * c)
 
         return y
+
+    def forward(
+        self,
+        x: Tensor,
+        mod: Tensor,
+    ) -> Tensor:
+        if self.checkpointing:
+            return checkpoint(self._forward, x, mod, use_reentrant=False)
+        else:
+            return self._forward(x, mod)
 
 
 class UNet(nn.Module):

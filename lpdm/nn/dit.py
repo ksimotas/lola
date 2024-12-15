@@ -19,6 +19,7 @@ import xformers.components.attention.core as xfa
 
 from einops.layers.torch import Rearrange
 from torch import Tensor
+from torch.utils.checkpoint import checkpoint
 from typing import Hashable, Optional, Sequence, Tuple, Union
 
 from .attention import MultiheadSelfAttention
@@ -33,6 +34,7 @@ class DiTBlock(nn.Module):
         spatial: The number of spatial dimensinons :math:`N`.
         rope: Whether to use rotary positional embedding (RoPE) or not.
         dropout: The dropout rate in :math:`[0, 1]`.
+        checkpointing: Whether to use gradient checkpointing or not.
         kwargs: Keyword arguments passed to :class:`MultiheadSelfAttention`.
     """
 
@@ -43,9 +45,12 @@ class DiTBlock(nn.Module):
         spatial: int = 2,
         rope: bool = True,
         dropout: Optional[float] = None,
+        checkpointing: bool = True,
         **kwargs,
     ):
         super().__init__()
+
+        self.checkpointing = checkpointing
 
         # Ada-LN Zero
         self.norm = nn.LayerNorm(channels, elementwise_affine=False)
@@ -79,7 +84,7 @@ class DiTBlock(nn.Module):
             nn.Linear(4 * channels, channels),
         )
 
-    def forward(
+    def _forward(
         self,
         x: Tensor,
         mod: Tensor,
@@ -113,6 +118,18 @@ class DiTBlock(nn.Module):
         y = (x + c2 * y) * torch.rsqrt(1 + c2 * c2)
 
         return y
+
+    def forward(
+        self,
+        x: Tensor,
+        mod: Tensor,
+        indices: Optional[Tensor] = None,
+        mask: Optional[Tensor] = None,
+    ) -> Tensor:
+        if self.checkpointing:
+            return checkpoint(self._forward, x, mod, indices, mask, use_reentrant=False)
+        else:
+            return self._forward(x, mod, indices, mask)
 
 
 class DiT(nn.Module):
