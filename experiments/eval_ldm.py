@@ -4,13 +4,17 @@ import argparse
 import dawgz
 import os
 
+from typing import Optional
+
 from lpdm.hydra import compose
 
 
 def evaluate(
     run: str,
-    target: str = "state_ema",
+    target: str = "state",
+    physics: Optional[str] = None,
     split: str = "valid",
+    index: Optional[int] = None,
     context: int = 1,
     rollout: int = 64,
     sampling_alg: str = "lms",
@@ -56,6 +60,7 @@ def evaluate(
         min_dt_stride=cfg.trajectory.stride,
         max_dt_stride=cfg.trajectory.stride,
         include_filters=cfg.dataset.include_filters,
+        augment=[s for s in cfg.dataset.augment if "random" not in s],
     )
 
     preprocess = partial(
@@ -82,31 +87,34 @@ def evaluate(
     autoencoder.eval()
 
     # Item
-    i = torch.randint(len(dataset), size=()).item()
+    if index is None:
+        index = torch.randint(len(dataset), size=()).item()
 
-    print(f"seed {seed} and item {split}/{i}")
+    print(f"item {split}/{index} and seed {seed}")
 
-    item = dataset[i]
+    item = dataset[index]
 
     x = item["input_fields"]
     x = x.to(device)
     x = preprocess(x)
+    x = rearrange(x, "L H W C -> C L H W")
 
     label = get_label(item).to(device)
+    labels = list(map(str, label.tolist()))
 
     ## Encode
     with torch.no_grad():
-        temp = rearrange(x, "L H W C -> L C H W")
+        temp = rearrange(x, "C L H W -> L C H W")
         temp = autoencoder.encode(temp)
         z = rearrange(temp, "L C H W -> C L H W")
 
-    shape = z.shape
-    label_features = label.numel()
-
     # Denoiser
+    shape = (z.shape[0], cfg.trajectory.length, *z.shape[2:])
+
     denoiser = get_denoiser(
         shape=shape,
-        label_features=label_features,
+        label_features=label.numel(),
+        masked=True,
         **cfg.denoiser,
     )
 
@@ -133,18 +141,18 @@ def evaluate(
             cond_sampler = LMSSampler(cond_denoiser, steps=sampling_steps).to(device)
 
         z1 = cond_sampler.init((1, math.prod(shape)))
-        z0 = cond_sampler(z1, label=label)
+        z0 = cond_sampler(z1, label=label, cond=mask.reshape(1, *shape))
         z0 = z0.reshape(shape)
 
         with torch.no_grad():
             temp = rearrange(z0, "C L H W -> L C H W")
             temp = autoencoder.decode(temp)
-            x_hat = rearrange(temp, "L C H W -> L H W C")
+            x_hat = rearrange(temp, "L C H W -> C L H W")
 
         return x_hat, z0
 
     ## Observation
-    mask = torch.zeros(z.shape, dtype=bool, device=device)
+    mask = torch.zeros(shape, dtype=bool, device=device)
     mask[:, :context] = True
 
     y = z[:, :context]
@@ -156,34 +164,39 @@ def evaluate(
         x_hat, z_hat = infer(mask, y)
 
         if trajectory:
-            trajectory.extend(x_hat[context:].unbind(0))
+            trajectory.extend(x_hat[:, context:].unbind(dim=1))
         else:
-            trajectory.extend(x_hat.unbind(0))
+            trajectory.extend(x_hat.unbind(dim=1))
 
         y = z_hat[:, -context:]
 
     trajectory = trajectory[:rollout_steps]
 
-    x_hat = torch.stack(trajectory)
+    x_hat = torch.stack(trajectory, dim=1)
 
     # Evaluation
     se = torch.square(x_hat - x)
-    mse = reduce(se, "L H W C -> L", reduction="mean")
+    mse = reduce(se, "C L H W -> L", reduction="mean")
     rmse = torch.sqrt(mse)
     rmse = rmse.cpu().tolist()
 
     with open(outpath / "stats.csv", mode="a") as f:
-        for i, e in enumerate(rmse):
-            time = i * cfg.trajectory.stride
-            f.write(f"{split},{seed},{context},{sampling_alg},{sampling_steps},{time},{e}\n")
+        f.writelines(
+            f"{split},{index},{seed},{context},{sampling_alg},{sampling_steps},{i * cfg.trajectory.stride},{e},"
+            + ",".join(labels)
+            + "\n"
+            for i, e in enumerate(rmse)
+        )
 
     # Viz
     plt.rcParams["animation.ffmpeg_path"] = "/mnt/sw/nix/store/fz8y69w4c97lcgv1wwk03bd4yh4zank7-ffmpeg-full-6.0-bin/bin/ffmpeg"  # fmt: off
 
-    figsize = (x.shape[1] / 128, x.shape[2] / 128)
+    figsize = (x.shape[-2] / 128, x.shape[-1] / 128)
 
     animation = animate_fields(x.cpu(), x_hat.cpu(), fields=cfg.dataset.fields, figsize=figsize)
-    animation.save(outpath / f"{split}_{seed:03d}_{context}_{sampling_alg}_{sampling_steps}.mp4")
+    animation.save(
+        outpath / f"{split}_{index:06d}_{seed:03d}_{context}_{sampling_alg}_{sampling_steps}.mp4"
+    )
 
 
 if __name__ == "__main__":
@@ -205,6 +218,7 @@ if __name__ == "__main__":
             run=cfg.run,
             target=cfg.target,
             split=cfg.split,
+            index=cfg.index,
             context=cfg.context,
             rollout=cfg.rollout,
             sampling_alg=cfg.sampling.alg,

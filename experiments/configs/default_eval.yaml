@@ -2,8 +2,9 @@ defaults:
   - server: rusty
 
 run: ???
-target: "state_ema"
+target: "state"
 split: "valid"
+index: null
 samples: 16
 context: 1
 rollout: 64
