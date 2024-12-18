@@ -19,7 +19,7 @@ def animate_fields(
     figsize: Tuple[float, float] = (2.4, 2.4),
     wait: float = 0.2,
 ) -> ani.Animation:
-    L, _, _, C = x.shape
+    C, L, _, _ = x.shape
 
     if timesteps is None:
         timesteps = list(range(L))
@@ -42,8 +42,8 @@ def animate_fields(
     artists = []
 
     for i in range(C):
-        vmin = np.nanmin(x[..., i])
-        vmax = np.nanmax(x[..., i])
+        vmin = np.nanmin(x[i])
+        vmax = np.nanmax(x[i])
 
         if fields:
             axs[0, i].set_title(f"{fields[i]}")
@@ -51,7 +51,7 @@ def animate_fields(
         for j in range(1):
             if y is None:
                 img = axs[j, i].imshow(
-                    x[j, ..., i], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
+                    x[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
                 )
                 axs[j, i].set_xticks([])
                 axs[j, i].set_yticks([])
@@ -61,19 +61,19 @@ def animate_fields(
                 artists.append(img)
             else:
                 img0 = axs[3 * j, i].imshow(
-                    x[j, ..., i], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
+                    x[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
                 )
                 axs[3 * j, i].set_xticks([])
                 axs[3 * j, i].set_yticks([])
 
                 img1 = axs[3 * j + 1, i].imshow(
-                    y[j, ..., i], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
+                    y[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
                 )
                 axs[3 * j + 1, i].set_xticks([])
                 axs[3 * j + 1, i].set_yticks([])
 
                 img2 = axs[3 * j + 2, i].imshow(
-                    y[j, ..., i] - x[j, ..., i],
+                    y[i, j] - x[i, j],
                     cmap="RdBu_r",
                     vmin=-tolerance,
                     vmax=tolerance,
@@ -91,11 +91,11 @@ def animate_fields(
     def animate(j):
         for i in range(C):
             if y is None:
-                artists[i].set_array(x[j, ..., i])
+                artists[i].set_array(x[i, j])
             else:
-                artists[3 * i + 0].set_array(x[j, ..., i])
-                artists[3 * i + 1].set_array(y[j, ..., i])
-                artists[3 * i + 2].set_array(y[j, ..., i] - x[j, ..., i])
+                artists[3 * i + 0].set_array(x[i, j])
+                artists[3 * i + 1].set_array(y[i, j])
+                artists[3 * i + 2].set_array(y[i, j] - x[i, j])
 
         return artists
 
@@ -114,7 +114,7 @@ def draw_fields(
     cmap: str = "RdBu_r",
     figsize: Tuple[float, float] = (2.4, 2.4),
 ) -> plt.Figure:
-    L, _, _, C = x.shape
+    C, L, _, _ = x.shape
 
     if timesteps is None:
         timesteps = list(range(L))
@@ -135,36 +135,34 @@ def draw_fields(
         )
 
     for i in range(C):
-        vmin = np.nanmin(x[..., i])
-        vmax = np.nanmax(x[..., i])
+        vmin = np.nanmin(x[i])
+        vmax = np.nanmax(x[i])
 
         if fields:
             axs[0, i].set_title(f"{fields[i]}")
 
         for j in range(L):
             if y is None:
-                axs[j, i].imshow(
-                    x[j, ..., i], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
-                )
+                axs[j, i].imshow(x[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none")
                 axs[j, i].set_xticks([])
                 axs[j, i].set_yticks([])
 
                 axs[j, 0].set_ylabel(rf"$x_{{{timesteps[j]}}}$")
             else:
                 axs[3 * j, i].imshow(
-                    x[j, ..., i], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
+                    x[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
                 )
                 axs[3 * j, i].set_xticks([])
                 axs[3 * j, i].set_yticks([])
 
                 axs[3 * j + 1, i].imshow(
-                    y[j, ..., i], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
+                    y[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
                 )
                 axs[3 * j + 1, i].set_xticks([])
                 axs[3 * j + 1, i].set_yticks([])
 
                 axs[3 * j + 2, i].imshow(
-                    y[j, ..., i] - x[j, ..., i],
+                    y[i, j] - x[i, j],
                     cmap="RdBu_r",
                     vmin=-tolerance,
                     vmax=tolerance,
