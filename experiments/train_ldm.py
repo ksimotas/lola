@@ -56,7 +56,6 @@ def train(runid: str, cfg: DictConfig):
     with open_dict(cfg):
         cfg.path = str(runpath)
         cfg.seed = randseed(runid)
-        cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml").ae
 
     if rank == 0:
         OmegaConf.save(cfg, runpath / "config.yaml")

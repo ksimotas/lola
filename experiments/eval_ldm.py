@@ -12,7 +12,6 @@ from lpdm.hydra import compose
 def evaluate(
     run: str,
     target: str = "state",
-    physics: Optional[str] = None,
     split: str = "valid",
     index: Optional[int] = None,
     context: int = 1,
@@ -48,6 +47,7 @@ def evaluate(
     outpath.mkdir(parents=True, exist_ok=True)
 
     cfg = OmegaConf.load(runpath / "config.yaml")
+    cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml")
 
     # Data
     rollout_steps = rollout // cfg.trajectory.stride + 1
@@ -70,23 +70,7 @@ def evaluate(
         transform=cfg.dataset.transform,
     )
 
-    # Autoencoder
-    autoencoder = get_autoencoder(
-        pix_channels=dataset.metadata.n_fields,
-        **cfg.ae,
-    )
-
-    state = torch.load(runpath / "autoencoder/state.pth", weights_only=True)
-
-    if "predictor" in state:
-        autoencoder.load_state_dict(state["autoencoder"])
-    else:
-        autoencoder.load_state_dict(state)
-
-    autoencoder.cuda()
-    autoencoder.eval()
-
-    # Item
+    ## Item
     if index is None:
         index = torch.randint(len(dataset), size=()).item()
 
@@ -101,6 +85,41 @@ def evaluate(
 
     label = get_label(item).to(device)
     labels = list(map(str, label.tolist()))
+
+    # Autoencoder
+    if hasattr(cfg.ae, "predictor"):
+        autoencoder = get_autoencoder(
+            pix_channels=dataset.metadata.n_fields,
+            out_channels=cfg.ae.predictor.cond_channels,
+            **cfg.ae.ae,
+        )
+
+        predictor = get_denoiser(
+            shape=(dataset.metadata.n_fields, x.shape[-2], x.shape[-1]),
+            **cfg.ae.predictor,
+        ).to(device)
+    else:
+        autoencoder = get_autoencoder(
+            pix_channels=dataset.metadata.n_fields,
+            **cfg.ae.ae,
+        )
+
+        predictor = None
+
+    state = torch.load(runpath / "autoencoder/state.pth", weights_only=True)
+
+    if "predictor" in state:
+        autoencoder.load_state_dict(state["autoencoder"])
+        autoencoder.cuda()
+        autoencoder.eval()
+
+        predictor.load_state_dict(state["predictor"])
+        predictor.cuda()
+        predictor.eval()
+    else:
+        autoencoder.load_state_dict(state)
+        autoencoder.cuda()
+        autoencoder.eval()
 
     ## Encode
     with torch.no_grad():
@@ -147,7 +166,17 @@ def evaluate(
         with torch.no_grad():
             temp = rearrange(z0, "C L H W -> L C H W")
             temp = autoencoder.decode(temp)
-            x_hat = rearrange(temp, "L C H W -> C L H W")
+
+            if predictor is None:
+                x_hat = rearrange(temp, "L C H W -> C L H W")
+            else:
+                sampler = LMSSampler(predictor, steps=64).to(device)
+
+                x1 = sampler.init((temp.shape[0], x.shape[0] * x.shape[2] * x.shape[3]))
+                x0 = sampler(x1, cond=temp)
+                x0 = x0.unflatten(-1, (x.shape[0], x.shape[2], x.shape[3]))
+
+                x_hat = rearrange(x0, "L C H W -> C L H W")
 
         return x_hat, z0
 
@@ -182,7 +211,7 @@ def evaluate(
 
     with open(outpath / "stats.csv", mode="a") as f:
         f.writelines(
-            f"{split},{index},{seed},{context},{sampling_alg},{sampling_steps},{i * cfg.trajectory.stride},{e},"
+            f"{run},{split},{index},{seed},{context},{sampling_alg},{sampling_steps},{i * cfg.trajectory.stride},{e},"
             + ",".join(labels)
             + "\n"
             for i, e in enumerate(rmse)
@@ -191,7 +220,7 @@ def evaluate(
     # Viz
     plt.rcParams["animation.ffmpeg_path"] = "/mnt/sw/nix/store/fz8y69w4c97lcgv1wwk03bd4yh4zank7-ffmpeg-full-6.0-bin/bin/ffmpeg"  # fmt: off
 
-    figsize = (x.shape[-2] / 128, x.shape[-1] / 128)
+    figsize = (x.shape[-1] / 64, x.shape[-2] / 64)
 
     animation = animate_fields(x.cpu(), x_hat.cpu(), fields=cfg.dataset.fields, figsize=figsize)
     animation.save(
