@@ -255,10 +255,11 @@ class DenoiserLoss(nn.Module):
 def get_autoencoder(
     pix_channels: int,
     lat_channels: int,
+    out_channels: Optional[int] = None,
     # Common
-    hid_channels: Sequence[int],
-    hid_blocks: Sequence[int],
-    saturation: str = "arcsinh",
+    hid_channels: Sequence[int] = (64, 128, 256),
+    hid_blocks: Sequence[int] = (3, 3, 3),
+    saturation: str = "softclip2",
     # Future
     arch: Optional[str] = None,
     # Ignore
@@ -273,6 +274,7 @@ def get_autoencoder(
         autoencoder = AutoEncoder(
             pix_channels=pix_channels,
             lat_channels=lat_channels,
+            out_channels=out_channels,
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
             saturation=saturation,
@@ -293,6 +295,8 @@ def get_denoiser(
     hid_blocks: Union[int, Sequence[int]],
     attention_heads: Union[int, Dict[int, int]],
     dropout: Optional[float] = None,
+    # Cond
+    cond_channels: int = 0,
     # Denoiser
     improved: bool = False,
     masked: bool = False,
@@ -323,7 +327,7 @@ def get_denoiser(
         backbone = DiT(
             in_channels=channels,
             out_channels=channels,
-            cond_channels=channels if masked else 0,
+            cond_channels=channels if masked else cond_channels,
             mod_features=emb_features,
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
@@ -339,7 +343,7 @@ def get_denoiser(
         backbone = UNet(
             in_channels=channels,
             out_channels=channels,
-            cond_channels=channels if masked else 0,
+            cond_channels=channels if masked else cond_channels,
             mod_features=emb_features,
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,

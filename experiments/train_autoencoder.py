@@ -291,9 +291,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("overrides", nargs="*", type=str)
     parser.add_argument("--cpus-per-gpu", type=int, default=8)
-    parser.add_argument("--gpus", type=int, default=4)
-    parser.add_argument("--ram", type=str, default="256GB")
-    parser.add_argument("--time", type=str, default="2-00:00:00")
+    parser.add_argument("--gpus", type=int, default=8)
+    parser.add_argument("--ram", type=str, default="512GB")
+    parser.add_argument("--time", type=str, default="7-00:00:00")
 
     args = parser.parse_args()
 
@@ -309,7 +309,7 @@ if __name__ == "__main__":
     dawgz.schedule(
         dawgz.job(
             f=partial(train, runid, cfg),
-            name=f"auto-encoder {runid}",
+            name=f"ae {runid}",
             cpus=args.cpus_per_gpu * args.gpus,
             gpus=args.gpus,
             ram=args.ram,
@@ -317,7 +317,7 @@ if __name__ == "__main__":
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
         ),
-        name=f"training auto-encoder {runid}",
+        name=f"training ae {runid}",
         backend="slurm",
         interpreter=f"torchrun --nnodes 1 --nproc-per-node {args.gpus} --standalone",
         env=[

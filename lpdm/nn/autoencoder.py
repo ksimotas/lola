@@ -355,8 +355,9 @@ class AutoEncoder(nn.Module):
     r"""Creates an auto-encoder module.
 
     Arguments:
-        pix_channels: The number of pixel channels :math:`C_i`.
-        lat_channels: The number of latent channels :math:`C_o`.
+        pix_channels: The number of pixel channels :math:`C_p`.
+        lat_channels: The number of latent channels :math:`C_l`.
+        out_channels: The number of output channels :math:`C_o`.
         hid_channels: The numbers of channels at each depth.
         hid_blocks: The numbers of hidden blocks at each depth.
         saturation: The type of latent saturation.
@@ -367,9 +368,10 @@ class AutoEncoder(nn.Module):
         self,
         pix_channels: int,
         lat_channels: int,
+        out_channels: Optional[int] = None,
         hid_channels: Sequence[int] = (64, 128, 256),
         hid_blocks: Sequence[int] = (3, 3, 3),
-        saturation: str = "arcsinh",
+        saturation: str = "softclip2",
         **kwargs,
     ):
         super().__init__()
@@ -384,7 +386,7 @@ class AutoEncoder(nn.Module):
 
         self.decoder = Decoder(
             in_channels=lat_channels,
-            out_channels=pix_channels,
+            out_channels=pix_channels if out_channels is None else out_channels,
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
             **kwargs,
