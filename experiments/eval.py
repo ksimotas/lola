@@ -23,6 +23,7 @@ def evaluate(
     import math
     import matplotlib.pyplot as plt
     import torch
+    import torch.nn as nn
 
     from azula.sample import DDIMSampler, DDPMSampler, LMSSampler
     from einops import rearrange, reduce
@@ -47,7 +48,9 @@ def evaluate(
     outpath.mkdir(parents=True, exist_ok=True)
 
     cfg = OmegaConf.load(runpath / "config.yaml")
-    cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml")
+
+    if hasattr(cfg, "ae_from"):
+        cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml")
 
     # Data
     rollout_steps = rollout // cfg.trajectory.stride + 1
@@ -87,39 +90,45 @@ def evaluate(
     labels = list(map(str, label.tolist()))
 
     # Autoencoder
-    if hasattr(cfg.ae, "predictor"):
-        autoencoder = get_autoencoder(
-            pix_channels=dataset.metadata.n_fields,
-            out_channels=cfg.ae.predictor.cond_channels,
-            **cfg.ae.ae,
-        )
+    if hasattr(cfg, "ae_from"):
+        state = torch.load(runpath / "autoencoder/state.pth", weights_only=True)
 
-        predictor = get_denoiser(
-            shape=(dataset.metadata.n_fields, x.shape[-2], x.shape[-1]),
-            **cfg.ae.predictor,
-        ).to(device)
+        if "predictor" in state:
+            autoencoder = get_autoencoder(
+                pix_channels=dataset.metadata.n_fields,
+                out_channels=cfg.ae.predictor.cond_channels,
+                **cfg.ae.ae,
+            )
+
+            autoencoder.load_state_dict(state["autoencoder"])
+            autoencoder.cuda()
+            autoencoder.eval()
+
+            predictor = get_denoiser(
+                shape=(dataset.metadata.n_fields, x.shape[-2], x.shape[-1]),
+                **cfg.ae.predictor,
+            ).to(device)
+
+            predictor.load_state_dict(state["predictor"])
+            predictor.cuda()
+            predictor.eval()
+        else:
+            autoencoder = get_autoencoder(
+                pix_channels=dataset.metadata.n_fields,
+                **cfg.ae.ae,
+            )
+
+            autoencoder.load_state_dict(state)
+            autoencoder.cuda()
+            autoencoder.eval()
+
+            predictor = None
     else:
-        autoencoder = get_autoencoder(
-            pix_channels=dataset.metadata.n_fields,
-            **cfg.ae.ae,
-        )
+        autoencoder = nn.Module()
+        autoencoder.encode = nn.Identity()
+        autoencoder.decode = nn.Identity()
 
         predictor = None
-
-    state = torch.load(runpath / "autoencoder/state.pth", weights_only=True)
-
-    if "predictor" in state:
-        autoencoder.load_state_dict(state["autoencoder"])
-        autoencoder.cuda()
-        autoencoder.eval()
-
-        predictor.load_state_dict(state["predictor"])
-        predictor.cuda()
-        predictor.eval()
-    else:
-        autoencoder.load_state_dict(state)
-        autoencoder.cuda()
-        autoencoder.eval()
 
     ## Encode
     with torch.no_grad():
