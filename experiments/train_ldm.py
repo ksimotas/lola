@@ -42,7 +42,7 @@ def train(runid: str, cfg: DictConfig):
     assert cfg.train.batch_size % world_size == 0
     assert cfg.train.epoch_size % (cfg.train.batch_size * cfg.train.accumulation) == 0
 
-    runname = f"{cfg.denoiser.name}_{cfg.optim.name}"
+    runname = f"{cfg.dataset.name}_{cfg.denoiser.name}_{cfg.optim.name}"
 
     runpath = Path(f"~/ceph/mpp-ldm/runs/{runid}_{runname}")
     runpath = runpath.expanduser().resolve()
