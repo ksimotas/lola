@@ -64,7 +64,7 @@ def train(runid: str, cfg: DictConfig):
         }
     else:
         stem = wandb.Api().run(path=cfg.fork_from)
-        stem_dir = os.path.basename(stem.config["path"])
+        stem_dir = Path(stem.config["path"]).name
         stem_path = Path(f"~/ceph/mpp-ldm/runs/{stem_dir}")
         stem_path = stem_path.expanduser().resolve()
         stem_state = torch.load(stem_path / f"{cfg.fork_target}.pth", weights_only=True)

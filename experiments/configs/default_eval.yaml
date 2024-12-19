@@ -4,10 +4,12 @@ defaults:
 run: ???
 target: "state"
 split: "valid"
-index: null
-samples: 16
+array: null
+samples: 64
 context: 1
+overlap: 1
 rollout: 64
 sampling:
   alg: "lms"
   steps: 64
+seed: 0

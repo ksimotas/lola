@@ -2,9 +2,10 @@
 
 import argparse
 import dawgz
-import os
+import random
 
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Union
 
 from lpdm.hydra import compose
 
@@ -13,12 +14,13 @@ def evaluate(
     run: str,
     target: str = "state",
     split: str = "valid",
-    index: Optional[int] = None,
+    index: Union[int, float] = 0,
     context: int = 1,
+    overlap: int = 1,
     rollout: int = 64,
     sampling_alg: str = "lms",
     sampling_steps: int = 64,
-    seed: int = 0,
+    seed: Optional[int] = None,
 ):
     import math
     import matplotlib.pyplot as plt
@@ -26,7 +28,7 @@ def evaluate(
     import torch.nn as nn
 
     from azula.sample import DDIMSampler, DDPMSampler, LMSSampler
-    from einops import rearrange, reduce
+    from einops import rearrange
     from functools import partial
     from omegaconf import OmegaConf
     from pathlib import Path
@@ -37,12 +39,11 @@ def evaluate(
 
     device = torch.device("cuda")
 
-    # RNG
-    _ = torch.manual_seed(seed)
-
     # Config
     runpath = Path(run)
     runpath = runpath.expanduser().resolve()
+
+    runname = runpath.name
 
     outpath = runpath / "results"
     outpath.mkdir(parents=True, exist_ok=True)
@@ -74,10 +75,8 @@ def evaluate(
     )
 
     ## Item
-    if index is None:
-        index = torch.randint(len(dataset), size=()).item()
-
-    print(f"item {split}/{index} and seed {seed}")
+    if isinstance(index, float):
+        index = int(index * len(dataset))
 
     item = dataset[index]
 
@@ -87,7 +86,7 @@ def evaluate(
     x = rearrange(x, "L H W C -> C L H W")
 
     label = get_label(item).to(device)
-    labels = list(map(str, label.tolist()))
+    labels = label.tolist()
 
     # Autoencoder
     if hasattr(cfg, "ae_from"):
@@ -189,6 +188,12 @@ def evaluate(
 
         return x_hat, z0
 
+    ## RNG
+    if seed is None:
+        seed = torch.initial_seed()
+
+    _ = torch.manual_seed(seed + index)
+
     ## Observation
     mask = torch.zeros(shape, dtype=bool, device=device)
     mask[:, :context] = True
@@ -202,29 +207,40 @@ def evaluate(
         x_hat, z_hat = infer(mask, y)
 
         if trajectory:
-            trajectory.extend(x_hat[:, context:].unbind(dim=1))
+            trajectory.extend(x_hat[:, overlap:].unbind(dim=1))
         else:
             trajectory.extend(x_hat.unbind(dim=1))
 
-        y = z_hat[:, -context:]
+        y = z_hat[:, -overlap:]
+
+        mask = torch.zeros(shape, dtype=bool, device=device)
+        mask[:, :overlap] = True
 
     trajectory = trajectory[:rollout_steps]
 
     x_hat = torch.stack(trajectory, dim=1)
 
     # Evaluation
-    se = torch.square(x_hat - x)
-    mse = reduce(se, "C L H W -> L", reduction="mean")
-    rmse = torch.sqrt(mse)
-    rmse = rmse.cpu().tolist()
+    lines = []
+
+    for field in range(dataset.metadata.n_fields):
+        for i in range(rollout_steps):
+            u, v = x[field, i], x_hat[field, i]
+
+            mse = torch.mean((u - v) ** 2)
+            rmse = torch.sqrt(mse)
+            nrmse = torch.sqrt(mse / torch.mean(u**2))
+            vrmse = torch.sqrt(mse / torch.var(u))
+
+            line = f"{runname},{split},{index},{seed},{(context - 1) * cfg.trajectory.stride + 1},{overlap},{sampling_alg},{sampling_steps},{field},{i * cfg.trajectory.stride},"
+            line += f"{rmse},{nrmse},{vrmse},"
+            line += ",".join(map(str, labels))
+            line += "\n"
+
+            lines.append(line)
 
     with open(outpath / "stats.csv", mode="a") as f:
-        f.writelines(
-            f"{run},{split},{index},{seed},{context},{sampling_alg},{sampling_steps},{i * cfg.trajectory.stride},{e},"
-            + ",".join(labels)
-            + "\n"
-            for i, e in enumerate(rmse)
-        )
+        f.writelines(lines)
 
     # Viz
     plt.rcParams["animation.ffmpeg_path"] = "/mnt/sw/nix/store/fz8y69w4c97lcgv1wwk03bd4yh4zank7-ffmpeg-full-6.0-bin/bin/ffmpeg"  # fmt: off
@@ -233,7 +249,8 @@ def evaluate(
 
     animation = animate_fields(x.cpu(), x_hat.cpu(), fields=cfg.dataset.fields, figsize=figsize)
     animation.save(
-        outpath / f"{split}_{index:06d}_{seed:03d}_{context}_{sampling_alg}_{sampling_steps}.mp4"
+        outpath
+        / f"{runname}_{split}_{index:06d}_{seed}_{context}_{overlap}_{sampling_alg}_{sampling_steps}.mp4"
     )
 
 
@@ -250,25 +267,34 @@ if __name__ == "__main__":
         overrides=args.overrides,
     )
 
+    ## RNG
+    random.seed(cfg.seed)
+
+    if cfg.array is None:
+        array = [random.random() for _ in range(cfg.samples)]
+    else:
+        array = cfg.array
+
     # Job
     def launch(i: int):
         evaluate(
             run=cfg.run,
             target=cfg.target,
             split=cfg.split,
-            index=cfg.index,
+            index=array[i],
             context=cfg.context,
+            overlap=cfg.overlap,
             rollout=cfg.rollout,
             sampling_alg=cfg.sampling.alg,
             sampling_steps=cfg.sampling.steps,
-            seed=i,
+            seed=cfg.seed,
         )
 
     dawgz.schedule(
         dawgz.job(
             f=launch,
             name="evaluate",
-            array=cfg.samples,
+            array=len(array),
             cpus=4,
             gpus=1,
             ram="16GB",
@@ -276,7 +302,7 @@ if __name__ == "__main__":
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
         ),
-        name=f"evaluate {os.path.basename(cfg.run)}",
+        name=f"evaluate {Path(cfg.run).name}",
         backend="slurm",
         env=[
             "export XDG_CACHE_HOME=$HOME/.cache",

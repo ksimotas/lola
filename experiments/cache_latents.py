@@ -5,6 +5,7 @@ import dawgz
 import glob
 import os
 
+from pathlib import Path
 from typing import Sequence
 
 from lpdm.hydra import compose
@@ -174,7 +175,7 @@ if __name__ == "__main__":
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
         ),
-        name=f"cache {os.path.basename(cfg.run)}",
+        name=f"cache {Path(cfg.run).name}",
         backend="slurm",
         env=[
             "export XDG_CACHE_HOME=$HOME/.cache",
