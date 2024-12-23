@@ -75,7 +75,7 @@ def cache_latent(
         **cfg.ae,
     )
 
-    state = torch.load(runpath / "state.pth", weights_only=True)
+    state = torch.load(runpath / "state.pth", weights_only=True, map_location=device)
 
     if "predictor" in state:
         state = state["autoencoder"]
@@ -83,6 +83,8 @@ def cache_latent(
     autoencoder.load_state_dict(state)
     autoencoder.to(device)
     autoencoder.eval()
+
+    del state
 
     # Encode
     if cache_path.exists():

@@ -90,7 +90,9 @@ def evaluate(
 
     # Autoencoder
     if hasattr(cfg, "ae_from"):
-        state = torch.load(runpath / "autoencoder/state.pth", weights_only=True)
+        state = torch.load(
+            runpath / "autoencoder/state.pth", weights_only=True, map_location=device
+        )
 
         if "predictor" in state:
             autoencoder = get_autoencoder(
@@ -122,6 +124,8 @@ def evaluate(
             autoencoder.eval()
 
             predictor = None
+
+        del state
     else:
         autoencoder = nn.Module()
         autoencoder.encode = nn.Identity()
@@ -145,7 +149,9 @@ def evaluate(
         **cfg.denoiser,
     )
 
-    denoiser.load_state_dict(torch.load(runpath / f"{target}.pth", weights_only=True))
+    denoiser.load_state_dict(
+        torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device)
+    )
     denoiser.cuda()
     denoiser.eval()
 

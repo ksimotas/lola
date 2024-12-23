@@ -72,7 +72,9 @@ def train(runid: str, cfg: DictConfig):
         stem_dir = Path(stem.config["path"]).name
         stem_path = Path(f"~/ceph/mpp-ldm/runs/{stem_dir}")
         stem_path = stem_path.expanduser().resolve()
-        stem_state = torch.load(stem_path / f"{cfg.fork_target}.pth", weights_only=True)
+        stem_state = torch.load(
+            stem_path / f"{cfg.fork_target}.pth", weights_only=True, map_location=device
+        )
 
         counter = {
             "epoch": stem.summary["_step"] + 1,
@@ -162,6 +164,7 @@ def train(runid: str, cfg: DictConfig):
 
     if cfg.fork_from is not None:
         denoiser.load_state_dict(stem_state)
+        del stem_state
 
     denoiser = DistributedDataParallel(
         module=denoiser,
@@ -335,6 +338,9 @@ def train(runid: str, cfg: DictConfig):
 
                 torch.save(state, runpath / "state_best.pth")
                 torch.save(state_ema, runpath / "state_best_ema.pth")
+
+            del state
+            del state_ema
 
         dist.barrier(device_ids=[device_id])
 

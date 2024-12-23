@@ -69,7 +69,9 @@ def train(runid: str, cfg: DictConfig):
         stem_dir = Path(stem.config["path"]).name
         stem_path = Path(f"~/ceph/mpp-ldm/runs/{stem_dir}")
         stem_path = stem_path.expanduser().resolve()
-        stem_state = torch.load(stem_path / f"{cfg.fork_target}.pth", weights_only=True)
+        stem_state = torch.load(
+            stem_path / f"{cfg.fork_target}.pth", weights_only=True, map_location=device
+        )
 
         counter = {
             "epoch": stem.summary["_step"] + 1,
@@ -135,6 +137,7 @@ def train(runid: str, cfg: DictConfig):
 
     if cfg.fork_from is not None:
         autoencoder.load_state_dict(stem_state)
+        del stem_state
 
     autoencoder = DistributedDataParallel(
         module=autoencoder,
@@ -275,6 +278,7 @@ def train(runid: str, cfg: DictConfig):
         if rank == 0:
             state = autoencoder.module.state_dict()
             torch.save(state, runpath / "state.pth")
+            del state
 
         dist.barrier(device_ids=[device_id])
 
