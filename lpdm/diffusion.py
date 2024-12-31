@@ -61,7 +61,7 @@ class LogLinearSchedule(Schedule):
         sigma_max: The final noise scale :math:`\sigma_\max \in \mathbb{R}_+`.
     """
 
-    def __init__(self, sigma_min: float = 1e-3, sigma_max: float = 1e2):
+    def __init__(self, sigma_min: float = 1e-3, sigma_max: float = 1e5):
         super().__init__()
 
         self.log_sigma_min = math.log(sigma_min)
@@ -82,25 +82,33 @@ class LogLogitSchedule(Schedule):
 
     .. math::
         \alpha_t & = 1 \\
-        \sigma_t & = \exp \log \frac{t}{1 - t} = \frac{t}{1 - t}
+        \sigma_t & = \sqrt{\sigma_\min \sigma_\max} \exp(\rho \logit t)
 
     See also:
-        :func:`torch.special.logit`
+        :func:`torch.logit`
 
     Arguments:
         sigma_min: The initial noise scale :math:`\sigma_\min \in \mathbb{R}_+`.
+        sigma_max: The final noise scale :math:`\sigma_\max \in \mathbb{R}_+`.
+        spread: The spread factor :math:`\rho \in \mathbb{R}_+`.
     """
 
-    def __init__(self, sigma_min: float = 1e-6):
+    def __init__(self, sigma_min: float = 1e-3, sigma_max: float = 1e5, spread: float = 2.0):
         super().__init__()
 
-        self.eps = sigma_min / (sigma_min + 1)
+        self.eps = math.sqrt(sigma_min / sigma_max) ** (1 / spread)
+        self.log_sigma_min = math.log(sigma_min)
+        self.log_sigma_max = math.log(sigma_max)
+        self.log_sigma_med = math.log(sigma_min * sigma_max) / 2
+        self.spread = spread
 
     def alpha(self, t: Tensor) -> Tensor:
         return torch.ones_like(t)
 
     def sigma(self, t: Tensor) -> Tensor:
-        return torch.exp(torch.special.logit(t, eps=self.eps))
+        return torch.exp(
+            self.spread * torch.logit(t * (1 - 2 * self.eps) + self.eps) + self.log_sigma_med
+        )
 
     def forward(self, t: Tensor) -> Tuple[Tensor, Tensor]:
         return self.alpha(t).unsqueeze(-1), self.sigma(t).unsqueeze(-1)
@@ -126,7 +134,7 @@ class PreconditionedDenoiser(GaussianDenoiser):
         c_in = 1 / torch.sqrt(alpha_t**2 + sigma_t**2)
         c_out = sigma_t / torch.sqrt(alpha_t**2 + sigma_t**2)
         c_skip = alpha_t / (alpha_t**2 + sigma_t**2)
-        c_noise = 1e3 * sigma_t / torch.sqrt(alpha_t**2 + sigma_t**2)
+        c_noise = 1e1 * torch.log(sigma_t / alpha_t)
         c_noise = c_noise.squeeze(dim=-1)
 
         mean = c_skip * x_t + c_out * self.backbone(c_in * x_t, c_noise, **kwargs)
@@ -176,7 +184,7 @@ class MaskedDenoiser(GaussianDenoiser):
 class DenoiserLoss(nn.Module):
     r"""Creates a loss module for a Gaussian denoiser."""
 
-    def __init__(self, distribution: str = "beta", a: float = 1.0, b: float = 1.0):
+    def __init__(self, distribution: str = "uniform", a: float = 0.0, b: float = 1.0):
         super().__init__()
 
         self.distribution = distribution
@@ -379,11 +387,11 @@ def get_denoiser(
     )
 
     if schedule is None:
-        schedule = VESchedule(sigma_min=1e-3, sigma_max=1e3)
+        schedule = VESchedule(sigma_min=1e-3, sigma_max=1e5)
     elif schedule.name == "log_linear":
         schedule = LogLinearSchedule(sigma_min=schedule.sigma_min, sigma_max=schedule.sigma_max)
     elif schedule.name == "log_logit":
-        schedule = LogLogitSchedule(sigma_min=schedule.sigma_min)
+        schedule = LogLogitSchedule(sigma_min=schedule.sigma_min, sigma_max=schedule.sigma_max)
 
     denoiser = PreconditionedDenoiser(backbone, schedule)
 

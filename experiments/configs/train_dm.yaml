@@ -1,7 +1,7 @@
 defaults:
   - dataset: euler_all
   - denoiser: unet_deep_medium
-  - denoiser/loss: beta
+  - denoiser/loss: uniform
   - denoiser/schedule: log_logit
   - optim: soap
   - server: rusty
