@@ -6,3 +6,9 @@ physics: "euler_multi_quadrants_openBC"
 split: "train"
 augment: []
 repeat: 1
+
+compute:
+  cpus: 4
+  gpus: 1
+  ram: "64GB"
+  time: "06:00:00"

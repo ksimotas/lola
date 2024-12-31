@@ -13,3 +13,9 @@ sampling:
   alg: "lms"
   steps: 64
 seed: 0
+
+compute:
+  cpus: 4
+  gpus: 1
+  ram: "16GB"
+  time: "01:00:00"

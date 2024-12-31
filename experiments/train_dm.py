@@ -339,37 +339,32 @@ if __name__ == "__main__":
     # Parser
     parser = argparse.ArgumentParser()
     parser.add_argument("overrides", nargs="*", type=str)
-    parser.add_argument("--nodes", type=int, default=1)
-    parser.add_argument("--cpus-per-gpu", type=int, default=8)
-    parser.add_argument("--gpus", type=int, default=8)
-    parser.add_argument("--ram", type=str, default="512GB")
-    parser.add_argument("--time", type=str, default="7-00:00:00")
 
     args = parser.parse_args()
 
     # Config
     cfg = compose(
-        config_file="./configs/default_dm.yaml",
+        config_file="./configs/train_dm.yaml",
         overrides=args.overrides,
     )
 
     # Job
     runid = wandb.util.generate_id()
 
-    if args.nodes > 1:
-        interpreter = f"torchrun --nnodes {args.nodes} --nproc-per-node {args.gpus} --rdzv_backend=c10d --rdzv_endpoint=$SLURMD_NODENAME:12345 --rdzv_id=$SLURM_JOB_ID"
+    if cfg.compute.nodes > 1:
+        interpreter = f"torchrun --nnodes {cfg.compute.nodes} --nproc-per-node {cfg.compute.gpus} --rdzv_backend=c10d --rdzv_endpoint=$SLURMD_NODENAME:12345 --rdzv_id=$SLURM_JOB_ID"
     else:
-        interpreter = f"torchrun --nnodes 1 --nproc-per-node {args.gpus} --standalone"
+        interpreter = f"torchrun --nnodes 1 --nproc-per-node {cfg.compute.gpus} --standalone"
 
     dawgz.schedule(
         dawgz.job(
             f=partial(train, runid, cfg),
             name=f"dm {runid}",
-            nodes=args.nodes,
-            cpus=args.cpus_per_gpu * args.gpus,
-            gpus=args.gpus,
-            ram=args.ram,
-            time=args.time,
+            nodes=cfg.compute.nodes,
+            cpus=cfg.compute.cpus_per_gpu * cfg.compute.gpus,
+            gpus=cfg.compute.gpus,
+            ram=cfg.compute.ram,
+            time=cfg.compute.time,
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
         ),
@@ -377,7 +372,7 @@ if __name__ == "__main__":
         backend="slurm",
         interpreter=interpreter,
         env=[
-            "export OMP_NUM_THREADS=" + f"{args.cpus_per_gpu}",
+            "export OMP_NUM_THREADS=" + f"{cfg.compute.cpus_per_gpu}",
             "export WANDB_SILENT=true",
             "export XDG_CACHE_HOME=$HOME/.cache",
         ],

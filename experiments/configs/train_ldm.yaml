@@ -1,13 +1,13 @@
 defaults:
   - dataset: euler_all
-  - denoiser: unet_deep_medium
+  - denoiser: dit_large
   - denoiser/loss: beta
   - denoiser/schedule: log_logit
   - optim: soap
   - server: rusty
 
 trajectory:
-  length: 9
+  length: 5
   stride: 1
 
 train:
@@ -17,5 +17,12 @@ train:
   accumulation: 1
   ema_decay: 0.9999
 
+ae_from: ???
 fork_from: null
 fork_target: "state"
+
+compute:
+  cpus_per_gpu: 8
+  gpus: 8
+  ram: "512GB"
+  time: "7-00:00:00"

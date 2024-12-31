@@ -269,7 +269,7 @@ if __name__ == "__main__":
 
     # Config
     cfg = compose(
-        config_file="./configs/default_eval.yaml",
+        config_file="./configs/eval.yaml",
         overrides=args.overrides,
     )
 
@@ -301,10 +301,10 @@ if __name__ == "__main__":
             f=launch,
             name="evaluate",
             array=len(array),
-            cpus=4,
-            gpus=1,
-            ram="16GB",
-            time="01:00:00",
+            cpus=cfg.compute.cpus,
+            gpus=cfg.compute.gpus,
+            ram=cfg.compute.ram,
+            time=cfg.compute.time,
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
         ),

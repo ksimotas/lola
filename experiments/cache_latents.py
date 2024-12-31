@@ -145,7 +145,7 @@ if __name__ == "__main__":
 
     # Config
     cfg = compose(
-        config_file="./configs/default_cache.yaml",
+        config_file="./configs/cache_latents.yaml",
         overrides=args.overrides,
     )
 
@@ -170,10 +170,10 @@ if __name__ == "__main__":
             f=launch,
             name="cache_latent",
             array=len(files),
-            cpus=4,
-            gpus=1,
-            ram="64GB",
-            time="06:00:00",
+            cpus=cfg.compute.cpus,
+            gpus=cfg.compute.gpus,
+            ram=cfg.compute.ram,
+            time=cfg.compute.time,
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
         ),
