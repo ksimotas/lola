@@ -3,7 +3,7 @@ defaults:
   - denoiser: dit_large
   - denoiser/loss: uniform
   - denoiser/schedule: log_logit
-  - optim: soap
+  - optim: psgd
   - server: rusty
 
 trajectory:

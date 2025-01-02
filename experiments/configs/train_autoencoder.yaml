@@ -2,7 +2,7 @@ defaults:
   - ae: f32c64_medium
   - ae/loss: mae
   - dataset: euler_all
-  - optim: soap
+  - optim: psgd
   - server: rusty
 
 train:
