@@ -8,6 +8,7 @@ __all__ = [
     "get_dataloader",
     "infinite_cycle",
     "isotropic_power_spectrum",
+    "random_context_mask",
     "LazyShuffleDataset",
     "MiniWellDataset",
 ]
@@ -30,7 +31,7 @@ from the_well.data.augmentation import (
     RandomAxisRoll,
 )
 from the_well.data.datasets import TrajectoryData, TrajectoryMetadata
-from torch import Tensor
+from torch import BoolTensor, Tensor
 from torch.utils.data import (
     ConcatDataset,
     DataLoader,
@@ -373,6 +374,44 @@ def isotropic_power_spectrum(
     p_iso = p_iso / torch.clip(counts, min=1)
 
     return p_iso, edges
+
+
+def random_context_mask(
+    x: Tensor,
+    lmbda: float = 1.0,
+    rho: float = 0.5,
+) -> BoolTensor:
+    r"""Returns a random context mask.
+
+    The task is either to emulate forward or backward in time. Consequently, the context
+    is a contiguous chunk of states at the beginning or end of the trajectory with
+    probability :math:`\rho`.
+
+    Arguments:
+        x: A trajectory tensor, with shape :math:`(B, C, L, ...)`.
+        lmbda: The average number of states :math:`\lambda` in the context. The number
+            of states in the context is at most :math:`L - 1`.
+        rho: The probability :math:`\rho` for the context to be at the beginning.
+    """
+
+    B, _, L, *shape = x.shape
+
+    rate = torch.full((B, 1), fill_value=lmbda, device=x.device)
+    context = torch.poisson(rate).long()
+
+    index = torch.arange(L, device=x.device)
+    forward = torch.rand((B, 1), device=x.device) < rho
+
+    mask = torch.where(
+        forward,
+        index < context % L,
+        index >= L - context % L,
+    )
+
+    mask = mask.reshape([B, 1, L] + [1 for _ in shape])
+    mask = mask.expand_as(x)
+
+    return mask
 
 
 class LazyShuffleDataset(IterableDataset):

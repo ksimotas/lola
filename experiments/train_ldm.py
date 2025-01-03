@@ -22,7 +22,7 @@ def train(runid: str, cfg: DictConfig):
     from torch.nn.parallel import DistributedDataParallel
     from tqdm import trange
 
-    from lpdm.data import MiniWellDataset, find_hdf5, get_dataloader
+    from lpdm.data import MiniWellDataset, find_hdf5, get_dataloader, random_context_mask
     from lpdm.diffusion import DenoiserLoss, get_denoiser
     from lpdm.optim import ExponentialMovingAverage, get_optimizer, safe_gd_step
     from lpdm.utils import map_to_memory, process_cpu_count, randseed
@@ -215,12 +215,7 @@ def train(runid: str, cfg: DictConfig):
             label = batch["label"]
             label = label.to(device, non_blocking=True)
 
-            mask = torch.rand(
-                (z.shape[0], 1, z.shape[2], 1, 1),
-                dtype=z.dtype,
-                device=z.device,
-            )
-            mask = mask < 1 / z.shape[2]
+            mask = random_context_mask(z, rho=0.66)
 
             if (i + 1) % cfg.train.accumulation == 0:
                 loss = denoiser_loss(denoiser, z, mask=mask, label=label)
@@ -286,12 +281,7 @@ def train(runid: str, cfg: DictConfig):
                 label = batch["label"]
                 label = label.to(device, non_blocking=True)
 
-                mask = torch.rand(
-                    (z.shape[0], 1, z.shape[2], 1, 1),
-                    dtype=z.dtype,
-                    device=z.device,
-                )
-                mask = mask < 1 / z.shape[2]
+                mask = random_context_mask(z, rho=0.66)
 
                 loss = denoiser_loss(denoiser, z, mask=mask, label=label)
                 losses.append(loss)
