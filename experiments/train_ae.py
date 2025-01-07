@@ -46,7 +46,7 @@ def train(runid: str, cfg: DictConfig):
 
     runname = f"{cfg.dataset.name}_{cfg.ae.name}_{cfg.optim.name}"
 
-    runpath = Path(f"~/ceph/mpp-ldm/runs/{runid}_{runname}")
+    runpath = Path(f"~/ceph/mpp-ldm/runs/ae/{runid}_{runname}")
     runpath = runpath.expanduser().resolve()
     runpath.mkdir(parents=True, exist_ok=True)
 
@@ -67,7 +67,7 @@ def train(runid: str, cfg: DictConfig):
     else:
         stem = wandb.Api().run(path=cfg.fork_from)
         stem_dir = Path(stem.config["path"]).name
-        stem_path = Path(f"~/ceph/mpp-ldm/runs/{stem_dir}")
+        stem_path = Path(f"~/ceph/mpp-ldm/runs/ae/{stem_dir}")
         stem_path = stem_path.expanduser().resolve()
         stem_state = torch.load(
             stem_path / f"{cfg.fork_target}.pth", weights_only=True, map_location=device
@@ -299,7 +299,7 @@ if __name__ == "__main__":
 
     # Config
     cfg = compose(
-        config_file="./configs/train_autoencoder.yaml",
+        config_file="./configs/train_ae.yaml",
         overrides=args.overrides,
     )
 
