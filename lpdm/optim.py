@@ -7,12 +7,15 @@ __all__ = [
 ]
 
 import math
+import os
 import torch
 import torch.nn as nn
 
 from heavyball import ForeachCachedDelayedPSGDKron, ForeachSOAP
 from torch import Tensor
 from typing import Iterable, Optional, Sequence, Tuple
+
+os.environ["TORCHINDUCTOR_CACHE_DIR"] = os.path.expanduser("~/.cache/torchinductor")
 
 
 class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
