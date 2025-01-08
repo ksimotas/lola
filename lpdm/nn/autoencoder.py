@@ -39,6 +39,7 @@ class ResBlock(nn.Module):
         attention_heads: The number of attention heads.
         spatial: The number of spatial dimensions :math:`N`.
         dropout: The dropout rate in :math:`[0, 1]`.
+        checkpointing: Whether to use gradient checkpointing or not.
         kwargs: Keyword arguments passed to :class:`torch.nn.Conv2d`.
     """
 
@@ -50,9 +51,12 @@ class ResBlock(nn.Module):
         attention_heads: Optional[int] = None,
         spatial: int = 2,
         dropout: Optional[float] = None,
+        checkpointing: bool = False,
         **kwargs,
     ):
         super().__init__()
+
+        self.checkpointing = checkpointing
 
         # Attention
         if attention_heads is None:
@@ -70,6 +74,8 @@ class ResBlock(nn.Module):
             ConvNd(channels, channels, spatial=spatial, **kwargs),
         )
 
+        self.block[-1].weight.data.mul_(1e-2)
+
         if norm == "group":
             self.block.insert(
                 0,
@@ -84,9 +90,7 @@ class ResBlock(nn.Module):
         else:
             raise NotImplementedError()
 
-        self.register_buffer("out_scale", torch.as_tensor(math.sqrt(1 / 2)))
-
-    def forward(self, x: Tensor) -> Tensor:
+    def _forward(self, x: Tensor) -> Tensor:
         r"""
         Arguments:
             x: The input tensor, with shape :math:`(B, C, L_1, ..., L_N)`.
@@ -98,7 +102,13 @@ class ResBlock(nn.Module):
         y = self.attn(x)
         y = self.block(y)
 
-        return self.out_scale * (x + y)
+        return x + y
+
+    def forward(self, x: Tensor) -> Tensor:
+        if self.checkpointing:
+            return checkpoint(self._forward, x, use_reentrant=False)
+        else:
+            return self._forward(x)
 
 
 class Encoder(nn.Module):
@@ -193,18 +203,25 @@ class Encoder(nn.Module):
                         hid_channels[i],
                         norm=norm,
                         attention_heads=attention_heads.get(i, None),
-                        dropout=dropout,
                         spatial=spatial,
+                        dropout=dropout,
+                        checkpointing=checkpointing,
                         **kwargs,
                     )
                 )
 
             if i + 1 == len(hid_blocks):
-                blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
+                blocks.append(
+                    ConvNd(
+                        hid_channels[i],
+                        out_channels,
+                        spatial=spatial,
+                        identity_init=True,
+                        **kwargs,
+                    )
+                )
 
             self.descent.append(blocks)
-
-        self.checkpointing = checkpointing
 
     def forward(self, x: Tensor) -> Tensor:
         r"""
@@ -217,10 +234,7 @@ class Encoder(nn.Module):
 
         for blocks in self.descent:
             for block in blocks:
-                if self.checkpointing and isinstance(block, ResBlock):
-                    x = checkpoint(block, x, use_reentrant=False)
-                else:
-                    x = block(x)
+                x = block(x)
 
         return x
 
@@ -284,7 +298,15 @@ class Decoder(nn.Module):
             blocks = nn.ModuleList()
 
             if i + 1 == len(hid_blocks):
-                blocks.append(ConvNd(in_channels, hid_channels[i], spatial=spatial, **kwargs))
+                blocks.append(
+                    ConvNd(
+                        in_channels,
+                        hid_channels[i],
+                        spatial=spatial,
+                        identity_init=True,
+                        **kwargs,
+                    )
+                )
 
             for _ in range(num_blocks):
                 blocks.append(
@@ -294,6 +316,7 @@ class Decoder(nn.Module):
                         attention_heads=attention_heads.get(i, None),
                         spatial=spatial,
                         dropout=dropout,
+                        checkpointing=checkpointing,
                         **kwargs,
                     )
                 )
@@ -330,8 +353,6 @@ class Decoder(nn.Module):
 
             self.ascent.append(blocks)
 
-        self.checkpointing = checkpointing
-
     def forward(self, x: Tensor) -> Tensor:
         r"""
         Arguments:
@@ -343,10 +364,7 @@ class Decoder(nn.Module):
 
         for blocks in self.ascent:
             for block in blocks:
-                if self.checkpointing and isinstance(block, ResBlock):
-                    x = checkpoint(block, x, use_reentrant=False)
-                else:
-                    x = block(x)
+                x = block(x)
 
         return x
 

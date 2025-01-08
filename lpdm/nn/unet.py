@@ -84,8 +84,7 @@ class UNetBlock(nn.Module):
             Rearrange("... (n C) -> n ... C" + " 1" * spatial, n=3),
         )
 
-        layer = self.ada_zero[-2]
-        layer.weight = nn.Parameter(layer.weight.detach() * 1e-2)
+        self.ada_zero[-2].weight.data.mul_(1e-2)
 
         # Block
         self.block = nn.Sequential(

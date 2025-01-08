@@ -61,8 +61,7 @@ class DiTBlock(nn.Module):
             Rearrange("... (n C) -> n ... 1 C", n=6),
         )
 
-        layer = self.ada_zero[-2]
-        layer.weight = nn.Parameter(layer.weight.detach() * 1e-2)
+        self.ada_zero[-2].weight.data.mul_(1e-2)
 
         # MSA
         self.msa = MultiheadSelfAttention(channels, **kwargs)
