@@ -83,36 +83,34 @@ def train(runid: str, cfg: DictConfig):
         }
 
     # Data
-    train_files = [
-        file
-        for physic in cfg.dataset.physics
-        for file in find_hdf5(
-            path=runpath / "autoencoder/cache" / physic / "train",
-            include_filters=cfg.dataset.include_filters,
-        )
-    ]
-
-    valid_files = [
-        file
-        for physic in cfg.dataset.physics
-        for file in find_hdf5(
-            path=runpath / "autoencoder/cache" / physic / "valid",
-            include_filters=cfg.dataset.include_filters,
-        )
-    ]
+    files = {
+        split: [
+            file
+            for physic in cfg.dataset.physics
+            for file in find_hdf5(
+                path=runpath / "autoencoder/cache" / physic / split,
+                include_filters=cfg.dataset.include_filters,
+            )
+        ]
+        for split in ("train", "valid")
+    }
 
     if rank == 0:
-        for file in (*train_files, *valid_files):
-            map_to_memory(file, shm=f"/dev/shm/{runid}", exist_ok=False)
+        for split in ("train", "valid"):
+            for file in files[split]:
+                map_to_memory(file, shm=f"/dev/shm/{runid}", exist_ok=False)
 
     dist.barrier(device_ids=[device_id])
 
-    train_files = [
-        map_to_memory(file, shm=f"/dev/shm/{runid}", exist_ok=True) for file in train_files
-    ]
+    files = {
+        split: [
+            map_to_memory(file, shm=f"/dev/shm/{runid}", exist_ok=True) for file in files[split]
+        ]
+        for split in ("train", "valid")
+    }
 
     trainset = MiniWellDataset.from_files(
-        files=train_files,
+        files=files["train"],
         steps=cfg.trajectory.length,
         stride=cfg.trajectory.stride,
     )
@@ -128,12 +126,8 @@ def train(runid: str, cfg: DictConfig):
         seed=cfg.seed,
     )
 
-    valid_files = [
-        map_to_memory(file, shm=f"/dev/shm/{runid}", exist_ok=True) for file in valid_files
-    ]
-
     validset = MiniWellDataset.from_files(
-        files=valid_files,
+        files=files["valid"],
         steps=cfg.trajectory.length,
         stride=cfg.trajectory.stride,
     )

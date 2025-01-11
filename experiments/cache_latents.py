@@ -150,17 +150,24 @@ if __name__ == "__main__":
     )
 
     # Files
-    path = os.path.join(cfg.server.datasets, cfg.physics, "data", cfg.split)
-    files = glob.glob("*.hdf5", root_dir=path) + glob.glob("*.h5", root_dir=path)
+    array = []
+
+    for physic in cfg.dataset.physics:
+        for split in [cfg.split]:
+            path = os.path.join(cfg.server.datasets, physic, "data", split)
+            files = glob.glob("*.hdf5", root_dir=path) + glob.glob("*.h5", root_dir=path)
+
+            for file in files:
+                array.append((physic, split, file))
 
     # Job(s)
     def launch(i: int):
         cache_latent(
             run=cfg.run,
-            physics=cfg.physics,
-            split=cfg.split,
-            file=files[i],
-            augment=cfg.augment,
+            physics=array[i][0],
+            split=array[i][1],
+            file=array[i][2],
+            augment=cfg.dataset.augment,
             repeat=cfg.repeat,
             datasets=cfg.server.datasets,
         )
@@ -169,7 +176,7 @@ if __name__ == "__main__":
         dawgz.job(
             f=launch,
             name="cache_latent",
-            array=len(files),
+            array=len(array),
             cpus=cfg.compute.cpus,
             gpus=cfg.compute.gpus,
             ram=cfg.compute.ram,

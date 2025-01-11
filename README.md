@@ -26,3 +26,32 @@ Before running the [experiments](experiments/), create a symlink to the Well dat
 ```
 ln -s /mnt/ceph/users/polymathic/the_well ~/ceph/the_well
 ```
+
+## Experiments
+
+```
+cd experiments
+```
+
+### Auto-encoders
+
+```
+python train_ae.py dataset=euler_all ae.lat_channels=32 optim.learning_rate=1e-5
+python train_ae.py dataset=euler_all ae.lat_channels=64 optim.learning_rate=1e-5
+python train_ae.py dataset=euler_all ae.lat_channels=128 optim.learning_rate=1e-5
+python train_ae.py dataset=rayleigh_benard ae.lat_channels=32 optim.learning_rate=1e-5
+python train_ae.py dataset=rayleigh_benard ae.lat_channels=64 optim.learning_rate=1e-5
+python train_ae.py dataset=rayleigh_benard ae.lat_channels=128 optim.learning_rate=1e-5
+```
+
+```
+python cache_latents.py run=??? dataset=rayleigh_benard split=train repeat=4
+python cache_latents.py run=??? dataset=rayleigh_benard dataset.augment=["log_scalars"] split=valid
+```
+
+### Pixel-space DMs
+
+```
+python train_dm.py dataset=euler_all optim.learning_rate=1e-5
+python train_dm.py dataset=rayleigh_benard optim.learning_rate=1e-5
+```

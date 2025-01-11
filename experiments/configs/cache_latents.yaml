@@ -1,10 +1,10 @@
 defaults:
+  - dataset: euler_all
   - server: rusty
 
 run: ???
-physics: "euler_multi_quadrants_openBC"
+
 split: "train"
-augment: []
 repeat: 1
 
 compute:
