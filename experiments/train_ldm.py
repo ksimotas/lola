@@ -25,7 +25,7 @@ def train(runid: str, cfg: DictConfig):
     from lpdm.data import MiniWellDataset, find_hdf5, get_dataloader, random_context_mask
     from lpdm.diffusion import DenoiserLoss, get_denoiser
     from lpdm.optim import ExponentialMovingAverage, get_optimizer, safe_gd_step
-    from lpdm.utils import map_to_memory, process_cpu_count, randseed
+    from lpdm.utils import map_to_memory, randseed
 
     # DDP
     dist.init_process_group(backend="nccl")
@@ -120,7 +120,7 @@ def train(runid: str, cfg: DictConfig):
         batch_size=cfg.train.batch_size // world_size,
         shuffle=True,
         infinite=True,
-        num_workers=process_cpu_count() // world_size,
+        num_workers=cfg.compute.cpus_per_gpu,
         rank=rank,
         world_size=world_size,
         seed=cfg.seed,
@@ -137,7 +137,7 @@ def train(runid: str, cfg: DictConfig):
         batch_size=cfg.train.batch_size // world_size,
         shuffle=True,
         infinite=True,
-        num_workers=process_cpu_count() // world_size,
+        num_workers=cfg.compute.cpus_per_gpu,
         rank=rank,
         world_size=world_size,
         seed=cfg.seed,
@@ -179,6 +179,7 @@ def train(runid: str, cfg: DictConfig):
     # W&B
     if rank == 0:
         run = wandb.init(
+            entity=cfg.wandb.entity,
             project="mpp-ldm-denoiser",
             id=runid,
             name=runname,

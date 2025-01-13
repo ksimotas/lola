@@ -27,7 +27,7 @@ def train(runid: str, cfg: DictConfig):
     from lpdm.diffusion import get_autoencoder
     from lpdm.loss import WeightedLoss
     from lpdm.optim import get_optimizer, safe_gd_step
-    from lpdm.utils import process_cpu_count, randseed
+    from lpdm.utils import randseed
 
     # DDP
     dist.init_process_group(backend="nccl")
@@ -94,7 +94,7 @@ def train(runid: str, cfg: DictConfig):
         batch_size=cfg.train.batch_size // world_size,
         shuffle="lazy" if cfg.train.lazy_shuffle else True,
         infinite=True,
-        num_workers=process_cpu_count() // world_size,
+        num_workers=cfg.compute.cpus_per_gpu,
         rank=rank,
         world_size=world_size,
         seed=cfg.seed,
@@ -114,7 +114,7 @@ def train(runid: str, cfg: DictConfig):
         batch_size=cfg.train.batch_size // world_size,
         shuffle=False,
         infinite=True,
-        num_workers=process_cpu_count() // world_size,
+        num_workers=cfg.compute.cpus_per_gpu,
         rank=rank,
         world_size=world_size,
         seed=cfg.seed,
@@ -153,6 +153,7 @@ def train(runid: str, cfg: DictConfig):
     # W&B
     if rank == 0:
         run = wandb.init(
+            entity=cfg.wandb.entity,
             project="mpp-ldm-ae",
             id=runid,
             name=runname,

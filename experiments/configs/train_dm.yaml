@@ -26,3 +26,6 @@ compute:
   gpus: 8
   ram: "512GB"
   time: "7-00:00:00"
+
+wandb:
+  entity: null
