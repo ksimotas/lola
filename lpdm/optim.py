@@ -11,9 +11,12 @@ import os
 import torch
 import torch.nn as nn
 
+from functools import partial
 from heavyball import ForeachCachedDelayedPSGDKron, ForeachSOAP
 from torch import Tensor
 from typing import Iterable, Optional, Sequence, Tuple
+
+from .soap import SOAP
 
 os.environ["TORCHINDUCTOR_CACHE_DIR"] = os.path.expanduser("~/.cache/torchinductor")
 
@@ -49,11 +52,8 @@ class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
             super().update_parameters(module)
 
 
-def precond_prob_schedule(max_prob=1.0, min_prob=0.1, decay=0.999, flat_start=0):
-    def prob(n):
-        return max(min_prob, max_prob * decay ** max(n - flat_start, 0))
-
-    return prob
+def precond_prob_schedule(n, max_prob=1.0, min_prob=0.01, decay=0.999, flat_start=0):
+    return max(min_prob, max_prob * decay ** max(n - flat_start, 0))
 
 
 def get_optimizer(
@@ -95,6 +95,15 @@ def get_optimizer(
             weight_decay=weight_decay,
         )
     elif optimizer == "soap":
+        optimizer = SOAP(
+            params,
+            lr=learning_rate,
+            betas=betas,
+            weight_decay=weight_decay,
+            precondition_frequency=precondition_frequency,
+            max_precond_dim=precondition_dim,
+        )
+    elif optimizer == "fast-soap":
         optimizer = ForeachSOAP(
             params,
             lr=learning_rate,
@@ -110,7 +119,8 @@ def get_optimizer(
             lr=learning_rate,
             beta=betas[0],
             weight_decay=weight_decay,
-            preconditioner_update_probability=precond_prob_schedule(
+            preconditioner_update_probability=partial(
+                precond_prob_schedule,
                 min_prob=1 / precondition_frequency,
             ),
             max_size_triangular=precondition_dim,
