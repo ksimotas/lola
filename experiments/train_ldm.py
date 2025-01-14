@@ -363,6 +363,7 @@ if __name__ == "__main__":
             time=cfg.compute.time,
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
+            exclude="workergpu156",
         ),
         name=f"training ldm {runid}",
         backend="slurm",
