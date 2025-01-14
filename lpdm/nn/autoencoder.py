@@ -5,12 +5,14 @@ __all__ = [
     "Encoder",
     "Decoder",
     "AutoEncoder",
+    "get_autoencoder",
 ]
 
 import math
 import torch
 import torch.nn as nn
 
+from omegaconf import DictConfig
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 from typing import Dict, Optional, Sequence, Tuple, Union
@@ -438,3 +440,37 @@ class AutoEncoder(nn.Module):
         z = self.encode(x)
         y = self.decoder(z)
         return y, z
+
+
+def get_autoencoder(
+    pix_channels: int,
+    lat_channels: int,
+    out_channels: Optional[int] = None,
+    # Common
+    hid_channels: Sequence[int] = (64, 128, 256),
+    hid_blocks: Sequence[int] = (3, 3, 3),
+    saturation: str = "softclip2",
+    # Future
+    arch: Optional[str] = None,
+    # Ignore
+    name: str = None,
+    loss: DictConfig = None,
+    # Others
+    **kwargs,
+) -> AutoEncoder:
+    r"""Instantiates an auto-encoder."""
+
+    if arch is None:
+        autoencoder = AutoEncoder(
+            pix_channels=pix_channels,
+            lat_channels=lat_channels,
+            out_channels=out_channels,
+            hid_channels=hid_channels,
+            hid_blocks=hid_blocks,
+            saturation=saturation,
+            **kwargs,
+        )
+    else:
+        raise NotImplementedError()
+
+    return autoencoder

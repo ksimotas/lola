@@ -5,7 +5,7 @@ import torch
 
 from pathlib import Path
 
-from lpdm.nn.dit import DiT
+from lpdm.nn.vit import ViT
 
 
 @pytest.mark.parametrize("length", [16])
@@ -30,7 +30,7 @@ def test_DiT(
     dropout: float,
     batch_size: int,
 ):
-    make = lambda: DiT(
+    make = lambda: ViT(
         in_channels=in_channels,
         out_channels=out_channels,
         mod_features=mod_features,

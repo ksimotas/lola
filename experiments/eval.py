@@ -34,7 +34,8 @@ def evaluate(
     from pathlib import Path
 
     from lpdm.data import field_preprocess, get_label, get_well_multi_dataset
-    from lpdm.diffusion import MaskedDenoiser, get_autoencoder, get_denoiser
+    from lpdm.diffusion import MaskedDenoiser, get_denoiser
+    from lpdm.nn.autoencoder import get_autoencoder
     from lpdm.plot import animate_fields
 
     device = torch.device("cuda")

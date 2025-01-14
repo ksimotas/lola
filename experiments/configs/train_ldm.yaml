@@ -1,6 +1,6 @@
 defaults:
   - dataset: euler_all
-  - denoiser: dit_large
+  - denoiser: vit_large
   - denoiser/loss: uniform
   - denoiser/schedule: log_logit
   - optim: psgd

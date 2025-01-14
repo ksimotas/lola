@@ -1,5 +1,5 @@
-name: "dit_large"
-arch: "dit"
+name: "vit_large"
+arch: "vit"
 improved: false
 emb_features: 256
 hid_channels: 1024

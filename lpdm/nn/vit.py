@@ -1,13 +1,16 @@
-r"""Diffusion Transformer (DiT) building blocks.
+r"""Vision Transformer (ViT) building blocks.
 
 References:
+    | An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale (Dosovitskiy et al., 2021)
+    | https://arxiv.org/abs/2010.11929
+
     | Scalable Diffusion Models with Transformers (Peebles et al., 2022)
     | https://arxiv.org/abs/2212.09748
 """
 
 __all__ = [
-    "DiTBlock",
-    "DiT",
+    "ViTBlock",
+    "ViT",
 ]
 
 import functools
@@ -25,8 +28,8 @@ from typing import Hashable, Optional, Sequence, Tuple, Union
 from .attention import MultiheadSelfAttention
 
 
-class DiTBlock(nn.Module):
-    r"""Creates a DiT block module.
+class ViTBlock(nn.Module):
+    r"""Creates a ViT block module.
 
     Arguments:
         channels: The number of channels :math:`C`.
@@ -131,8 +134,8 @@ class DiTBlock(nn.Module):
             return self._forward(x, mod, indices, mask)
 
 
-class DiT(nn.Module):
-    r"""Creates a modulated DiT-like module.
+class ViT(nn.Module):
+    r"""Creates a modulated ViT-like module.
 
     Arguments:
         in_channels: The number of input channels :math:`C_i`.
@@ -147,7 +150,7 @@ class DiT(nn.Module):
         window_size: The local attention window size.
         rope: Whether to use rotary positional embedding (RoPE) or not.
         dropout: The dropout rate in :math:`[0, 1]`.
-        kwargs: Keyword arguments passed to :class:`DiTBlock`.
+        kwargs: Keyword arguments passed to :class:`ViTBlock`.
     """
 
     def __init__(
@@ -206,7 +209,7 @@ class DiT(nn.Module):
         )
 
         self.blocks = nn.ModuleList([
-            DiTBlock(
+            ViTBlock(
                 channels=hid_channels,
                 mod_features=mod_features,
                 spatial=spatial,

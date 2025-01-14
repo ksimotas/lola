@@ -2,7 +2,6 @@ r"""Diffusion building blocks."""
 
 __all__ = [
     "DenoiserLoss",
-    "get_autoencoder",
     "get_denoiser",
 ]
 
@@ -19,10 +18,9 @@ from torch.distributions import Beta, Distribution, Kumaraswamy, Uniform
 from torch.nn.parallel import DistributedDataParallel
 from typing import Dict, Optional, Sequence, Tuple, Union
 
-from .nn.autoencoder import AutoEncoder
-from .nn.dit import DiT
 from .nn.embedding import SineEncoding
 from .nn.unet import UNet
+from .nn.vit import ViT
 
 
 class EmbeddingWrapper(nn.Module):
@@ -260,40 +258,6 @@ class DenoiserLoss(nn.Module):
         return l_mean + l_var
 
 
-def get_autoencoder(
-    pix_channels: int,
-    lat_channels: int,
-    out_channels: Optional[int] = None,
-    # Common
-    hid_channels: Sequence[int] = (64, 128, 256),
-    hid_blocks: Sequence[int] = (3, 3, 3),
-    saturation: str = "softclip2",
-    # Future
-    arch: Optional[str] = None,
-    # Ignore
-    name: str = None,
-    loss: DictConfig = None,
-    # Others
-    **kwargs,
-) -> AutoEncoder:
-    r"""Instantiates an auto-encoder."""
-
-    if arch is None:
-        autoencoder = AutoEncoder(
-            pix_channels=pix_channels,
-            lat_channels=lat_channels,
-            out_channels=out_channels,
-            hid_channels=hid_channels,
-            hid_blocks=hid_blocks,
-            saturation=saturation,
-            **kwargs,
-        )
-    else:
-        raise NotImplementedError()
-
-    return autoencoder
-
-
 def get_denoiser(
     arch: str,
     shape: Sequence[int],
@@ -309,7 +273,7 @@ def get_denoiser(
     improved: bool = False,
     masked: bool = False,
     schedule: DictConfig = None,
-    # DiT
+    # ViT
     qk_norm: bool = True,
     patch_size: Union[int, Sequence[int]] = 4,
     window_size: Optional[Sequence[int]] = None,
@@ -331,8 +295,8 @@ def get_denoiser(
 
     channels, *_ = shape
 
-    if arch == "dit":
-        backbone = DiT(
+    if arch == "dit" or arch == "vit":
+        backbone = ViT(
             in_channels=channels,
             out_channels=channels,
             cond_channels=channels if masked else cond_channels,

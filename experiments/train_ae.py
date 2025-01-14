@@ -24,8 +24,8 @@ def train(runid: str, cfg: DictConfig):
     from tqdm import trange
 
     from lpdm.data import field_preprocess, get_dataloader, get_well_multi_dataset
-    from lpdm.diffusion import get_autoencoder
     from lpdm.loss import WeightedLoss
+    from lpdm.nn.autoencoder import get_autoencoder
     from lpdm.optim import get_optimizer, safe_gd_step
     from lpdm.utils import randseed
 
