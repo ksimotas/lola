@@ -270,7 +270,6 @@ def get_denoiser(
     # Cond
     cond_channels: int = 0,
     # Denoiser
-    improved: bool = False,
     masked: bool = False,
     schedule: DictConfig = None,
     # ViT
@@ -288,6 +287,8 @@ def get_denoiser(
     # Ignore
     name: str = None,
     loss: DictConfig = None,
+    # Deprecated
+    improved: bool = False,
 ) -> GaussianDenoiser:
     r"""Instantiates a denoiser."""
 
