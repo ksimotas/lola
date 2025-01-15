@@ -36,12 +36,12 @@ cd experiments
 ### Auto-encoders
 
 ```
-python train_ae.py dataset=euler_all ae.lat_channels=32 optim.learning_rate=1e-5
-python train_ae.py dataset=euler_all ae.lat_channels=64 optim.learning_rate=1e-5
-python train_ae.py dataset=euler_all ae.lat_channels=128 optim.learning_rate=1e-5
-python train_ae.py dataset=rayleigh_benard ae.lat_channels=32 optim.learning_rate=1e-5
-python train_ae.py dataset=rayleigh_benard ae.lat_channels=64 optim.learning_rate=1e-5
-python train_ae.py dataset=rayleigh_benard ae.lat_channels=128 optim.learning_rate=1e-5
+python train_ae.py dataset=euler_all ae.lat_channels=32
+python train_ae.py dataset=euler_all ae.lat_channels=64
+python train_ae.py dataset=euler_all ae.lat_channels=128
+python train_ae.py dataset=rayleigh_benard ae.lat_channels=32
+python train_ae.py dataset=rayleigh_benard ae.lat_channels=64
+python train_ae.py dataset=rayleigh_benard ae.lat_channels=128
 ```
 
 ```
@@ -52,6 +52,12 @@ python cache_latents.py run=??? dataset=rayleigh_benard dataset.augment=["log_sc
 ### Pixel-space DMs
 
 ```
-python train_dm.py dataset=euler_all optim.learning_rate=1e-5
-python train_dm.py dataset=rayleigh_benard optim.learning_rate=1e-5
+python train_dm.py dataset=euler_all
+python train_dm.py dataset=rayleigh_benard
+```
+
+## Latent-space DMs
+
+```
+python train_ldm.py ae_from=??? dataset=rayleigh_benard
 ```
