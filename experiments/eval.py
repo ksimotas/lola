@@ -22,19 +22,18 @@ def evaluate(
     sampling_steps: int = 64,
     seed: Optional[int] = None,
 ):
-    import math
     import matplotlib.pyplot as plt
     import torch
     import torch.nn as nn
 
-    from azula.sample import DDIMSampler, DDPMSampler, LMSSampler
     from einops import rearrange
     from functools import partial
     from omegaconf import OmegaConf
     from pathlib import Path
 
     from lpdm.data import field_preprocess, get_label, get_well_multi_dataset
-    from lpdm.diffusion import MaskedDenoiser, get_denoiser
+    from lpdm.diffusion import get_denoiser
+    from lpdm.emulation import decode_traj, emulate_diffusion, emulate_rollout, encode_traj
     from lpdm.nn.autoencoder import get_autoencoder
     from lpdm.plot import animate_fields
 
@@ -55,13 +54,13 @@ def evaluate(
         cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml")
 
     # Data
-    rollout_steps = rollout // cfg.trajectory.stride + 1
+    rollout_strided = rollout // cfg.trajectory.stride + 1
 
     dataset = get_well_multi_dataset(
         path="/mnt/ceph/users/polymathic/the_well/datasets",
         physics=cfg.dataset.physics,
         split=split,
-        steps=rollout_steps,
+        steps=rollout_strided,
         min_dt_stride=cfg.trajectory.stride,
         max_dt_stride=cfg.trajectory.stride,
         include_filters=cfg.dataset.include_filters,
@@ -112,9 +111,7 @@ def evaluate(
 
     ## Encode
     with torch.no_grad():
-        temp = rearrange(x, "C L H W -> L C H W")
-        temp = autoencoder.encode(temp)
-        z = rearrange(temp, "L C H W -> C L H W")
+        z = encode_traj(autoencoder, x)
 
     # Denoiser
     shape = (z.shape[0], cfg.trajectory.length, *z.shape[2:])
@@ -132,72 +129,40 @@ def evaluate(
     denoiser.cuda()
     denoiser.eval()
 
-    # Inference
-    def infer(mask, y):
-        yy = torch.zeros(shape, dtype=y.dtype, device=y.device)
-        yy[mask] = y.flatten()
-
-        cond_denoiser = MaskedDenoiser(
-            denoiser,
-            y=yy.flatten(),
-            mask=mask.flatten(),
-        )
-
-        if sampling_alg == "ddpm":
-            cond_sampler = DDPMSampler(cond_denoiser, steps=sampling_steps).to(device)
-        elif sampling_alg == "ddim":
-            cond_sampler = DDIMSampler(cond_denoiser, steps=sampling_steps).to(device)
-        elif sampling_alg == "lms":
-            cond_sampler = LMSSampler(cond_denoiser, steps=sampling_steps).to(device)
-
-        z1 = cond_sampler.init((1, math.prod(shape)))
-        z0 = cond_sampler(z1, label=label, cond=mask.reshape(1, *shape))
-        z0 = z0.reshape(shape)
-
-        with torch.no_grad():
-            temp = rearrange(z0, "C L H W -> L C H W")
-            temp = autoencoder.decode(temp)
-            x_hat = rearrange(temp, "L C H W -> C L H W")
-
-        return x_hat, z0
-
     ## RNG
     if seed is None:
         seed = torch.initial_seed()
 
     _ = torch.manual_seed(seed + index)
 
-    ## Observation
-    mask = torch.zeros(shape, dtype=bool, device=device)
-    mask[:, :context] = True
-
-    y = z[:, :context]
-
     ## Rollout
-    trajectory = []
+    def emulate(mask, z_obs):
+        return emulate_diffusion(
+            denoiser,
+            mask,
+            z_obs,
+            label=label,
+            algorithm=sampling_alg,
+            steps=sampling_steps,
+        )
 
-    while len(trajectory) < rollout_steps:
-        x_hat, z_hat = infer(mask, y)
+    z_hat = emulate_rollout(
+        emulate,
+        z,
+        window=cfg.trajectory.length,
+        rollout=rollout_strided,
+        context=context,
+        overlap=overlap,
+    )
 
-        if trajectory:
-            trajectory.extend(x_hat[:, overlap:].unbind(dim=1))
-        else:
-            trajectory.extend(x_hat.unbind(dim=1))
-
-        y = z_hat[:, -overlap:]
-
-        mask = torch.zeros(shape, dtype=bool, device=device)
-        mask[:, :overlap] = True
-
-    trajectory = trajectory[:rollout_steps]
-
-    x_hat = torch.stack(trajectory, dim=1)
+    with torch.no_grad():
+        x_hat = decode_traj(autoencoder, z_hat)
 
     # Evaluation
     lines = []
 
     for field in range(dataset.metadata.n_fields):
-        for i in range(rollout_steps):
+        for i in range(rollout_strided):
             u, v = x[field, i], x_hat[field, i]
 
             mse = torch.mean((u - v) ** 2)
