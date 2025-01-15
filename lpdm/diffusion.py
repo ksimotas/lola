@@ -59,7 +59,7 @@ class LogLinearSchedule(Schedule):
         sigma_max: The final noise scale :math:`\sigma_\max \in \mathbb{R}_+`.
     """
 
-    def __init__(self, sigma_min: float = 1e-3, sigma_max: float = 1e5):
+    def __init__(self, sigma_min: float = 1e-3, sigma_max: float = 1e4):
         super().__init__()
 
         self.log_sigma_min = math.log(sigma_min)
@@ -91,7 +91,7 @@ class LogLogitSchedule(Schedule):
         spread: The spread factor :math:`\rho \in \mathbb{R}_+`.
     """
 
-    def __init__(self, sigma_min: float = 1e-3, sigma_max: float = 1e5, spread: float = 2.0):
+    def __init__(self, sigma_min: float = 1e-3, sigma_max: float = 1e4, spread: float = 2.0):
         super().__init__()
 
         self.eps = math.sqrt(sigma_min / sigma_max) ** (1 / spread)
@@ -351,7 +351,7 @@ def get_denoiser(
     )
 
     if schedule is None:
-        schedule = VESchedule(sigma_min=1e-3, sigma_max=1e5)
+        schedule = VESchedule(sigma_min=1e-3, sigma_max=1e4)
     elif schedule.name == "log_linear":
         schedule = LogLinearSchedule(sigma_min=schedule.sigma_min, sigma_max=schedule.sigma_max)
     elif schedule.name == "log_logit":
