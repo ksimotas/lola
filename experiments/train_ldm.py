@@ -25,7 +25,7 @@ def train(runid: str, cfg: DictConfig):
     from lpdm.data import MiniWellDataset, find_hdf5, get_dataloader, random_context_mask
     from lpdm.diffusion import DenoiserLoss, get_denoiser
     from lpdm.optim import ExponentialMovingAverage, get_optimizer, safe_gd_step
-    from lpdm.utils import map_to_memory, randseed
+    from lpdm.utils import randseed
 
     # DDP
     dist.init_process_group(backend="nccl")
@@ -95,20 +95,6 @@ def train(runid: str, cfg: DictConfig):
         for split in ("train", "valid")
     }
 
-    if rank == 0:
-        for split in ("train", "valid"):
-            for file in files[split]:
-                map_to_memory(file, shm=f"/dev/shm/{runid}", exist_ok=False)
-
-    dist.barrier(device_ids=[device_id])
-
-    files = {
-        split: [
-            map_to_memory(file, shm=f"/dev/shm/{runid}", exist_ok=True) for file in files[split]
-        ]
-        for split in ("train", "valid")
-    }
-
     trainset = MiniWellDataset.from_files(
         files=files["train"],
         steps=cfg.trajectory.length,
@@ -135,7 +121,7 @@ def train(runid: str, cfg: DictConfig):
     valid_loader = get_dataloader(
         dataset=validset,
         batch_size=cfg.train.batch_size // world_size,
-        shuffle=True,
+        shuffle=False,
         infinite=True,
         num_workers=cfg.compute.cpus_per_gpu,
         rank=rank,
