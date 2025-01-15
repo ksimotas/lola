@@ -95,44 +95,20 @@ def evaluate(
             runpath / "autoencoder/state.pth", weights_only=True, map_location=device
         )
 
-        if "predictor" in state:
-            autoencoder = get_autoencoder(
-                pix_channels=dataset.metadata.n_fields,
-                out_channels=cfg.ae.predictor.cond_channels,
-                **cfg.ae.ae,
-            )
+        autoencoder = get_autoencoder(
+            pix_channels=dataset.metadata.n_fields,
+            **cfg.ae.ae,
+        )
 
-            autoencoder.load_state_dict(state["autoencoder"])
-            autoencoder.cuda()
-            autoencoder.eval()
-
-            predictor = get_denoiser(
-                shape=(dataset.metadata.n_fields, x.shape[-2], x.shape[-1]),
-                **cfg.ae.predictor,
-            ).to(device)
-
-            predictor.load_state_dict(state["predictor"])
-            predictor.cuda()
-            predictor.eval()
-        else:
-            autoencoder = get_autoencoder(
-                pix_channels=dataset.metadata.n_fields,
-                **cfg.ae.ae,
-            )
-
-            autoencoder.load_state_dict(state)
-            autoencoder.cuda()
-            autoencoder.eval()
-
-            predictor = None
+        autoencoder.load_state_dict(state)
+        autoencoder.cuda()
+        autoencoder.eval()
 
         del state
     else:
         autoencoder = nn.Module()
         autoencoder.encode = nn.Identity()
         autoencoder.decode = nn.Identity()
-
-        predictor = None
 
     ## Encode
     with torch.no_grad():
@@ -158,12 +134,12 @@ def evaluate(
 
     # Inference
     def infer(mask, y):
-        z = torch.zeros(shape, dtype=y.dtype, device=y.device)
-        z[mask] = y.flatten()
+        yy = torch.zeros(shape, dtype=y.dtype, device=y.device)
+        yy[mask] = y.flatten()
 
         cond_denoiser = MaskedDenoiser(
             denoiser,
-            y=z.flatten(),
+            y=yy.flatten(),
             mask=mask.flatten(),
         )
 
@@ -181,17 +157,7 @@ def evaluate(
         with torch.no_grad():
             temp = rearrange(z0, "C L H W -> L C H W")
             temp = autoencoder.decode(temp)
-
-            if predictor is None:
-                x_hat = rearrange(temp, "L C H W -> C L H W")
-            else:
-                sampler = LMSSampler(predictor, steps=64).to(device)
-
-                x1 = sampler.init((temp.shape[0], x.shape[0] * x.shape[2] * x.shape[3]))
-                x0 = sampler(x1, cond=temp)
-                x0 = x0.unflatten(-1, (x.shape[0], x.shape[2], x.shape[3]))
-
-                x_hat = rearrange(x0, "L C H W -> C L H W")
+            x_hat = rearrange(temp, "L C H W -> C L H W")
 
         return x_hat, z0
 
