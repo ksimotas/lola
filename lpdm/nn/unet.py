@@ -50,7 +50,7 @@ class UNetBlock(nn.Module):
         attention_heads: Optional[int] = None,
         spatial: int = 2,
         dropout: Optional[float] = None,
-        checkpointing: bool = True,
+        checkpointing: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -141,6 +141,8 @@ class UNet(nn.Module):
         spatial: The number of spatial dimensions :math:`N`.
         periodic: Whether the spatial dimensions are periodic or not.
         dropout: The dropout rate in :math:`[0, 1]`.
+        checkpointing: Whether to use gradient checkpointing or not.
+        identity_init: Initialize down/upsampling convolutions as identity.
     """
 
     def __init__(
@@ -158,6 +160,8 @@ class UNet(nn.Module):
         spatial: int = 2,
         periodic: bool = False,
         dropout: Optional[float] = None,
+        checkpointing: bool = False,
+        identity_init: bool = True,
     ):
         super().__init__()
 
@@ -187,8 +191,9 @@ class UNet(nn.Module):
                         mod_features,
                         norm=norm,
                         attention_heads=attention_heads.get(i, None),
-                        dropout=dropout,
                         spatial=spatial,
+                        dropout=dropout,
+                        checkpointing=checkpointing,
                         **kwargs,
                     )
                 )
@@ -199,8 +204,9 @@ class UNet(nn.Module):
                         mod_features,
                         norm=norm,
                         attention_heads=attention_heads.get(i, None),
-                        dropout=dropout,
                         spatial=spatial,
+                        dropout=dropout,
+                        checkpointing=checkpointing,
                         **kwargs,
                     )
                 )
@@ -213,7 +219,7 @@ class UNet(nn.Module):
                         hid_channels[i],
                         stride=stride,
                         spatial=spatial,
-                        identity_init=True,
+                        identity_init=identity_init,
                         **kwargs,
                     ),
                 )
@@ -238,7 +244,7 @@ class UNet(nn.Module):
                         hid_channels[i] + hid_channels[i + 1],
                         hid_channels[i],
                         spatial=spatial,
-                        identity_init=True,
+                        identity_init=identity_init,
                         **kwargs,
                     ),
                 )

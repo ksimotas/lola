@@ -48,7 +48,7 @@ class ViTBlock(nn.Module):
         spatial: int = 2,
         rope: bool = True,
         dropout: Optional[float] = None,
-        checkpointing: bool = True,
+        checkpointing: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -144,12 +144,9 @@ class ViT(nn.Module):
         mod_features: The number of modulating features :math:`D`.
         hid_channels: The numbers of hidden token channels.
         hid_blocks: The number of hidden transformer blocks.
-        attention_heads: The number of attention heads :math:`H`.
         spatial: The number of spatial dimensions :math:`N`.
         patch_size: The path size.
         window_size: The local attention window size.
-        rope: Whether to use rotary positional embedding (RoPE) or not.
-        dropout: The dropout rate in :math:`[0, 1]`.
         kwargs: Keyword arguments passed to :class:`ViTBlock`.
     """
 
@@ -161,21 +158,12 @@ class ViT(nn.Module):
         mod_features: int = 0,
         hid_channels: int = 1024,
         hid_blocks: int = 3,
-        attention_heads: int = 1,
         spatial: int = 2,
         patch_size: Union[int, Sequence[int]] = 4,
         window_size: Union[int, Sequence[int], None] = None,
-        rope: bool = True,
-        dropout: Optional[float] = None,
         **kwargs,
     ):
         super().__init__()
-
-        kwargs.update(
-            attention_heads=attention_heads,
-            dropout=dropout,
-            rope=rope,
-        )
 
         if isinstance(patch_size, int):
             patch_size = [patch_size] * spatial

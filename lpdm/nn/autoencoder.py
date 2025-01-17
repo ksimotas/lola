@@ -130,6 +130,7 @@ class Encoder(nn.Module):
         periodic: Whether the spatial dimensions are periodic or not.
         dropout: The dropout rate in :math:`[0, 1]`.
         checkpointing: Whether to use gradient checkpointing or not.
+        identity_init: Initialize down/upsampling convolutions as identity.
     """
 
     def __init__(
@@ -148,6 +149,7 @@ class Encoder(nn.Module):
         periodic: bool = False,
         dropout: Optional[float] = None,
         checkpointing: bool = False,
+        identity_init: bool = True,
     ):
         super().__init__()
 
@@ -180,7 +182,7 @@ class Encoder(nn.Module):
                                 hid_channels[i - 1] * math.prod(stride),
                                 hid_channels[i],
                                 spatial=spatial,
-                                identity_init=True,
+                                identity_init=identity_init,
                                 **kwargs,
                             ),
                         )
@@ -192,7 +194,7 @@ class Encoder(nn.Module):
                             hid_channels[i],
                             spatial=spatial,
                             stride=stride,
-                            identity_init=True,
+                            identity_init=identity_init,
                             **kwargs,
                         )
                     )
@@ -218,7 +220,7 @@ class Encoder(nn.Module):
                         hid_channels[i],
                         out_channels,
                         spatial=spatial,
-                        identity_init=True,
+                        identity_init=identity_init,
                         **kwargs,
                     )
                 )
@@ -258,6 +260,7 @@ class Decoder(nn.Module):
         periodic: Whether the spatial dimensions are periodic or not.
         dropout: The dropout rate in :math:`[0, 1]`.
         checkpointing: Whether to use gradient checkpointing or not.
+        identity_init: Initialize down/upsampling convolutions as identity.
     """
 
     def __init__(
@@ -276,6 +279,7 @@ class Decoder(nn.Module):
         periodic: bool = False,
         dropout: Optional[float] = None,
         checkpointing: bool = False,
+        identity_init: bool = False,
     ):
         super().__init__()
 
@@ -305,7 +309,7 @@ class Decoder(nn.Module):
                         in_channels,
                         hid_channels[i],
                         spatial=spatial,
-                        identity_init=True,
+                        identity_init=identity_init,
                         **kwargs,
                     )
                 )
@@ -331,7 +335,7 @@ class Decoder(nn.Module):
                                 hid_channels[i],
                                 hid_channels[i - 1] * math.prod(stride),
                                 spatial=spatial,
-                                identity_init=True,
+                                identity_init=identity_init,
                                 **kwargs,
                             ),
                             Unpatchify(patch_size=stride),
@@ -345,7 +349,7 @@ class Decoder(nn.Module):
                                 hid_channels[i],
                                 hid_channels[i - 1],
                                 spatial=spatial,
-                                identity_init=True,
+                                identity_init=identity_init,
                                 **kwargs,
                             ),
                         )

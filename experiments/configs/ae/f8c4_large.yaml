@@ -7,3 +7,5 @@ pixel_shuffle: true
 norm: "layer"
 attention_heads: {}
 dropout: 0.05
+checkpointing: false
+identity_init: true

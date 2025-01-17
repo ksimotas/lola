@@ -8,3 +8,5 @@ norm: "layer"
 attention_heads: {6: 8}
 periodic: false
 dropout: 0.05
+checkpointing: true
+identity_init: true
