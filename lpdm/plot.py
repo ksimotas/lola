@@ -1,11 +1,14 @@
 r"""Plotting and image helpers."""
 
+import math
 import matplotlib.animation as ani
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 
 from numpy.typing import ArrayLike
 from PIL import Image
+from torch import Tensor
 from typing import Optional, Sequence, Tuple
 
 
@@ -176,7 +179,100 @@ def draw_fields(
                 axs[3 * j + 2, 0].set_ylabel(rf"$y_{{{timesteps[j]}}} - x_{{{timesteps[j]}}}$")
 
     fig.align_labels()
-    fig.set_layout_engine(layout="tight")
+    fig.tight_layout()
+
+    return fig
+
+
+def isotropic_power_spectrum(
+    x: ArrayLike,
+    edges: Optional[ArrayLike] = None,
+    spatial: int = 2,
+) -> Tuple[Tensor, Tensor]:
+    r"""Computes the isotropic power spectrum of a field.
+
+    Adapted from :func:`the_well.benchmark.metrics.spectral.power_spectrum`.
+
+    Arguments:
+        x: A field tensor, with shape :math:`(*, L_1, ..., L_N)`.
+        edges: The frequency bin edges (in cycles per unit), with shape :math:`(L + 1)`.
+        spatial: The number of spatial dimensions :math:`N`.
+
+    Returns:
+        The power spectrum and the frequency bin edges, with shape :math:`(*, L)` and
+        :math:`(L + 1)`, respectively.
+    """
+
+    x = torch.as_tensor(x)
+
+    # Frequency
+    k = []
+
+    for i in range(spatial):
+        k_i = torch.fft.fftfreq(x.shape[i - spatial], dtype=x.dtype, device=x.device)
+        k.append(k_i)
+
+    k2 = map(torch.square, k)
+    k2_iso = sum(torch.meshgrid(*k2, indexing="ij"))
+    k_iso = torch.sqrt(k2_iso)
+
+    if edges is None:
+        bins = math.floor(math.sqrt(k_iso.ndim) * min(k_iso.shape) / 2)
+        edges = torch.linspace(0, k_iso.max(), bins + 1, dtype=x.dtype, device=x.device)
+    else:
+        edges = torch.as_tensor(edges)
+        bins = len(edges) - 1
+
+    indices = torch.clip(torch.bucketize(k_iso.flatten(), edges), max=bins - 1)
+    counts = torch.bincount(indices, minlength=bins)
+
+    # Power spectrum
+    s = torch.fft.fftn(x, dim=tuple(range(-spatial, 0)))
+    p = torch.square(torch.abs(s))
+    p = torch.flatten(p, start_dim=-spatial)
+
+    p_iso = torch.zeros((*p.shape[:-1], bins), dtype=x.dtype, device=x.device)
+    p_iso = p_iso.scatter_add(dim=-1, index=indices.expand_as(p), src=p)
+    p_iso = p_iso / torch.clip(counts, min=1)
+
+    return p_iso, edges
+
+
+def draw_psd(
+    x: ArrayLike,
+    y: Optional[ArrayLike] = None,
+    fields: Optional[Sequence[str]] = None,
+    figsize: Tuple[float, float] = (3.2, 3.2),
+) -> plt.Figure:
+    C, *shape = x.shape
+
+    fig, axs = plt.subplots(
+        nrows=1,
+        ncols=C,
+        figsize=(figsize[0] * C, figsize[1]),
+        squeeze=False,
+    )
+
+    for i in range(C):
+        if fields:
+            axs[0, i].set_title(f"{fields[i]}")
+
+        x_ps, edges = isotropic_power_spectrum(x[i], spatial=len(shape))
+
+        axs[0, i].loglog(edges[1:], x_ps, base=2, label="$x$", color="black")
+
+        if y is not None:
+            y_ps, _ = isotropic_power_spectrum(y[i], spatial=len(shape))
+
+            axs[0, i].loglog(edges[1:], y_ps, base=2, label="$y$", color="C0", alpha=0.75)
+
+        axs[0, i].set_xticks([2**i for i in range(math.floor(math.log2(edges[1].item())), 0)])
+
+    axs[0, 0].set_ylabel("power spectrum density")
+    axs[0, 0].legend()
+
+    fig.align_labels()
+    fig.tight_layout()
 
     return fig
 
