@@ -45,19 +45,26 @@ python train_ae.py dataset=rayleigh_benard ae.lat_channels=128
 ```
 
 ```
+python cache_latents.py run=??? dataset=euler_all split=train repeat=4
+python cache_latents.py run=??? dataset=euler_all dataset.augment=[] split=valid
 python cache_latents.py run=??? dataset=rayleigh_benard split=train repeat=4
 python cache_latents.py run=??? dataset=rayleigh_benard dataset.augment=["log_scalars"] split=valid
 ```
 
-### Pixel-space DMs
+### Pixel-space DMs and SMs
 
 ```
-python train_dm.py dataset=euler_all
+python train_dm.py dataset=euler_all compute.nodes=2
 python train_dm.py dataset=rayleigh_benard
+python train_sm.py dataset=euler_all compute.nodes=2
+python train_sm.py dataset=rayleigh_benard
 ```
 
-## Latent-space DMs
+## Latent-space DMs and SMs
 
 ```
+python train_ldm.py ae_from=??? dataset=euler_all
 python train_ldm.py ae_from=??? dataset=rayleigh_benard
+python train_sdm.py ae_from=??? dataset=euler_all
+python train_sdm.py ae_from=??? dataset=rayleigh_benard
 ```
