@@ -33,9 +33,16 @@ def evaluate(
 
     from lpdm.data import field_preprocess, get_label, get_well_multi_dataset
     from lpdm.diffusion import get_denoiser
-    from lpdm.emulation import decode_traj, emulate_diffusion, emulate_rollout, encode_traj
+    from lpdm.emulation import (
+        decode_traj,
+        emulate_diffusion,
+        emulate_rollout,
+        emulate_surrogate,
+        encode_traj,
+    )
     from lpdm.nn.autoencoder import get_autoencoder
     from lpdm.plot import animate_fields
+    from lpdm.surrogate import get_surrogate
 
     device = torch.device("cuda")
 
@@ -114,21 +121,34 @@ def evaluate(
         z = encode_traj(autoencoder, x)
         x_ae = decode_traj(autoencoder, z)
 
-    # Denoiser
+    # Emulator
     shape = (z.shape[0], cfg.trajectory.length, *z.shape[2:])
 
-    denoiser = get_denoiser(
-        shape=shape,
-        label_features=label.numel(),
-        masked=True,
-        **cfg.denoiser,
-    )
+    if hasattr(cfg, "denoiser"):
+        denoiser = get_denoiser(
+            shape=shape,
+            label_features=label.numel(),
+            masked=True,
+            **cfg.denoiser,
+        )
 
-    denoiser.load_state_dict(
-        torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device)
-    )
-    denoiser.cuda()
-    denoiser.eval()
+        denoiser.load_state_dict(
+            torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device)
+        )
+        denoiser.cuda()
+        denoiser.eval()
+    elif hasattr(cfg, "surrogate"):
+        surrogate = get_surrogate(
+            shape=shape,
+            label_features=label.numel(),
+            **cfg.surrogate,
+        ).to(device)
+
+        surrogate.load_state_dict(
+            torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device)
+        )
+        surrogate.cuda()
+        surrogate.eval()
 
     ## RNG
     if seed is None:
@@ -137,14 +157,21 @@ def evaluate(
     _ = torch.manual_seed(seed + index)
 
     ## Rollout
-    def emulate(mask, z_obs):
-        return emulate_diffusion(
+    if hasattr(cfg, "denoiser"):
+        emulate = lambda mask, z_obs: emulate_diffusion(
             denoiser,
             mask,
             z_obs,
             label=label,
             algorithm=sampling_alg,
             steps=sampling_steps,
+        )
+    elif hasattr(cfg, "surrogate"):
+        emulate = lambda mask, z_obs: emulate_surrogate(
+            surrogate,
+            mask,
+            z_obs,
+            label=label,
         )
 
     z_hat = emulate_rollout(
@@ -239,7 +266,7 @@ if __name__ == "__main__":
     dawgz.schedule(
         dawgz.job(
             f=launch,
-            name="evaluate",
+            name="eval",
             array=len(array),
             cpus=cfg.compute.cpus,
             gpus=cfg.compute.gpus,
@@ -248,7 +275,7 @@ if __name__ == "__main__":
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
         ),
-        name=f"evaluate {Path(cfg.run).name}",
+        name=f"eval {Path(cfg.run).name}",
         backend="slurm",
         env=[
             "export XDG_CACHE_HOME=$HOME/.cache",
