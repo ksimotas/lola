@@ -1,4 +1,4 @@
-name: "${.optimizer}_${.learning_rate}_${.weight_decay}_${.scheduler}_${.grad_clip}"
+name: "${.optimizer}_${.learning_rate}_${.scheduler}"
 optimizer: "psgd"
 betas: [0.9]
 precondition_frequency: 64
