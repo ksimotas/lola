@@ -112,6 +112,7 @@ def evaluate(
     ## Encode
     with torch.no_grad():
         z = encode_traj(autoencoder, x)
+        x_ae = decode_traj(autoencoder, z)
 
     # Denoiser
     shape = (z.shape[0], cfg.trajectory.length, *z.shape[2:])
@@ -163,25 +164,32 @@ def evaluate(
 
     for field in range(dataset.metadata.n_fields):
         for i in range(rollout_strided):
-            u, v = x[field, i], x_hat[field, i]
+            for auto_encoded in (False, True):
+                if auto_encoded:
+                    u, v = x_ae[field, i], x_hat[field, i]
+                else:
+                    u, v = x[field, i], x_hat[field, i]
 
-            mse = torch.mean((u - v) ** 2)
-            rmse = torch.sqrt(mse)
-            nrmse = torch.sqrt(mse / torch.mean(u**2))
-            vrmse = torch.sqrt(mse / torch.var(u))
+                mse = torch.mean((u - v) ** 2)
+                rmse = torch.sqrt(mse)
+                nrmse = torch.sqrt(mse / torch.mean(u**2))
+                vrmse = torch.sqrt(mse / torch.var(u))
 
-            line = f"{runname},{split},{index},{seed},{(context - 1) * cfg.trajectory.stride + 1},{overlap},{sampling_alg},{sampling_steps},{field},{i * cfg.trajectory.stride},"
-            line += f"{rmse},{nrmse},{vrmse},"
-            line += ",".join(map(str, labels))
-            line += "\n"
+                line = f"{runname},{split},{index},{seed},{(context - 1) * cfg.trajectory.stride + 1},{overlap},{sampling_alg},{sampling_steps},{field},{i * cfg.trajectory.stride},{auto_encoded},"
+                line += f"{rmse},{nrmse},{vrmse},"
+                line += ",".join(map(str, labels))
+                line += "\n"
 
-            lines.append(line)
+                lines.append(line)
 
     with open(outpath / "stats.csv", mode="a") as f:
         f.writelines(lines)
 
     # Viz
     plt.rcParams["animation.ffmpeg_path"] = "/mnt/sw/nix/store/fz8y69w4c97lcgv1wwk03bd4yh4zank7-ffmpeg-full-6.0-bin/bin/ffmpeg"  # fmt: off
+
+    if x.shape[-1] < x.shape[-2]:
+        x, x_hat = x.mT, x_hat.mT
 
     figsize = (x.shape[-1] / 64, x.shape[-2] / 64)
 
