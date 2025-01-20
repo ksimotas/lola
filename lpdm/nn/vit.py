@@ -18,14 +18,13 @@ import itertools
 import math
 import torch
 import torch.nn as nn
-import xformers.components.attention.core as xfa
 
 from einops.layers.torch import Rearrange
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 from typing import Hashable, Optional, Sequence, Tuple, Union
 
-from .attention import MultiheadSelfAttention
+from .attention import MultiheadSelfAttention, xfa
 
 
 class ViTBlock(nn.Module):

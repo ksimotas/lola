@@ -6,8 +6,11 @@ __all__ = [
 
 import torch
 import torch.nn as nn
-import xformers.components.attention.core as xfa
-import xformers.sparse as xfs
+import warnings
+
+with warnings.catch_warnings(action="ignore"):
+    import xformers.components.attention.core as xfa
+    import xformers.sparse as xfs
 
 from einops import rearrange
 from torch import Tensor
