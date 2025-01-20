@@ -27,9 +27,9 @@ def train(runid: str, cfg: DictConfig):
         get_dataloader,
         get_label,
         get_well_multi_dataset,
-        random_context_mask,
     )
     from lpdm.diffusion import DenoiserLoss, get_denoiser
+    from lpdm.emulation import random_context_mask
     from lpdm.optim import ExponentialMovingAverage, get_optimizer, safe_gd_step
     from lpdm.utils import randseed
 
@@ -204,7 +204,7 @@ def train(runid: str, cfg: DictConfig):
             label = get_label(batch)
             label = label.to(device, non_blocking=True)
 
-            mask = random_context_mask(x, rho=0.66)
+            mask = random_context_mask(x, rho=0.66, atleast=1)
 
             if (i + 1) % cfg.train.accumulation == 0:
                 loss = denoiser_loss(denoiser, x, mask=mask, label=label)
@@ -271,7 +271,7 @@ def train(runid: str, cfg: DictConfig):
                 label = get_label(batch)
                 label = label.to(device, non_blocking=True)
 
-                mask = random_context_mask(x, rho=0.66)
+                mask = random_context_mask(x, rho=0.66, atleast=1)
 
                 loss = denoiser_loss(denoiser, x, mask=mask, label=label)
                 losses.append(loss)

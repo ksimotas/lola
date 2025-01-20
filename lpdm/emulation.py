@@ -116,3 +116,45 @@ def emulate_rollout(
     trajectory = trajectory[:rollout]
 
     return torch.stack(trajectory, dim=1)
+
+
+def random_context_mask(
+    x: Tensor,
+    lmbda: float = 1.0,
+    rho: float = 0.5,
+    atleast: int = 0,
+) -> BoolTensor:
+    r"""Returns a random context mask.
+
+    The task is either to emulate forward or backward in time. Consequently, the context
+    is a contiguous chunk of states at the beginning or end of the trajectory with
+    probability :math:`\rho`.
+
+    Arguments:
+        x: A trajectory tensor, with shape :math:`(B, C, L, ...)`.
+        lmbda: The average number of states :math:`\lambda` in the context. The number
+            of states in the context is at most :math:`L - 1`.
+        rho: The probability :math:`\rho` for the context to be at the beginning.
+        atleast: The minimum number of context states. :math:`\lambda` does not take
+            this number into account.
+    """
+
+    B, _, L, *shape = x.shape
+
+    rate = torch.full((B, 1), fill_value=lmbda, device=x.device)
+    context = torch.poisson(rate).long()
+    context = context % (L - atleast) + atleast
+
+    index = torch.arange(L, device=x.device)
+    forward = torch.rand((B, 1), device=x.device) < rho
+
+    mask = torch.where(
+        forward,
+        index < context,
+        index >= L - context,
+    )
+
+    mask = mask.reshape([B, 1, L] + [1 for _ in shape])
+    mask = mask.expand_as(x)
+
+    return mask

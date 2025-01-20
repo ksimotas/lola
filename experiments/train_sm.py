@@ -27,8 +27,8 @@ def train(runid: str, cfg: DictConfig):
         get_dataloader,
         get_label,
         get_well_multi_dataset,
-        random_context_mask,
     )
+    from lpdm.emulation import random_context_mask
     from lpdm.optim import get_optimizer, safe_gd_step
     from lpdm.surrogate import get_surrogate
     from lpdm.utils import randseed

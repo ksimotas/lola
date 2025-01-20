@@ -22,7 +22,8 @@ def train(runid: str, cfg: DictConfig):
     from torch.nn.parallel import DistributedDataParallel
     from tqdm import trange
 
-    from lpdm.data import MiniWellDataset, find_hdf5, get_dataloader, random_context_mask
+    from lpdm.data import MiniWellDataset, find_hdf5, get_dataloader
+    from lpdm.emulation import random_context_mask
     from lpdm.optim import get_optimizer, safe_gd_step
     from lpdm.surrogate import get_surrogate
     from lpdm.utils import randseed
