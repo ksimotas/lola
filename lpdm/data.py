@@ -213,7 +213,7 @@ def get_well_dataset(
         path: A path to a directory of HDF5 datasets.
         split: The name of the data split to load. Options are "train", "valid", and "test".
             If the path does not contain the split directory, an exception is raised.
-        steps: The number of time steps in the trajectories.
+        steps: The number of time steps in the trajectories. If negative, load all steps.
         include_filters: Include files whose name contains any of these strings.
         exclude_filters: Exclude files whose name contains any of these strings
         kwargs: Keyword arguments passed to :class:`the_well.data.WellDataset`.
@@ -242,6 +242,14 @@ def get_well_dataset(
         augmentation = compose_augmentation(*augment)
     else:
         augmentation = None
+
+    if steps < 0:
+        dataset = WellDataset(
+            path=path,
+            include_filters=include_filters,
+            exclude_filters=exclude_filters,
+        )
+        steps = dataset.metadata.n_steps_per_trajectory[0]
 
     return WellDataset(
         path=path,

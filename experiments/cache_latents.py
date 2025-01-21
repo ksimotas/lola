@@ -50,14 +50,7 @@ def cache_latent(
         path=datasets,
         physics=physics,
         split=split,
-        include_filters=[file],
-    )
-
-    dataset = get_well_dataset(
-        path=datasets,
-        physics=physics,
-        split=split,
-        steps=dataset.metadata.n_steps_per_trajectory[0],
+        steps=-1,
         include_filters=[file],
         augment=augment,
     )

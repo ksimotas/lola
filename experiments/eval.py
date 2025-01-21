@@ -4,23 +4,29 @@ import argparse
 import dawgz
 import random
 
+from omegaconf import DictConfig
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Dict, Optional, Sequence, Union
 
 from lpdm.hydra import compose
 
 
 def evaluate(
     run: str,
+    server: DictConfig,
     target: str = "state",
     split: str = "valid",
     index: Union[int, float] = 0,
+    start: int = 0,
     context: int = 1,
     overlap: int = 1,
-    rollout: int = 64,
-    sampling_alg: str = "lms",
-    sampling_steps: int = 64,
+    samples: int = 1,
+    sampling: Dict[str, Any] = {},  # noqa: B006
     seed: Optional[int] = None,
+    record: int = 1,
+    # Ignore
+    array: Sequence[Union[int, float]] = (),
+    compute: Optional[DictConfig] = None,
 ):
     import matplotlib.pyplot as plt
     import torch
@@ -30,6 +36,7 @@ def evaluate(
     from functools import partial
     from omegaconf import OmegaConf
     from pathlib import Path
+    from tqdm import trange
 
     from lpdm.data import field_preprocess, get_label, get_well_multi_dataset
     from lpdm.diffusion import get_denoiser
@@ -40,6 +47,7 @@ def evaluate(
         emulate_surrogate,
         encode_traj,
     )
+    from lpdm.fourier import isotropic_power_spectrum
     from lpdm.nn.autoencoder import get_autoencoder
     from lpdm.plot import animate_fields
     from lpdm.surrogate import get_surrogate
@@ -52,24 +60,17 @@ def evaluate(
 
     runname = runpath.name
 
-    outpath = runpath / "results"
-    outpath.mkdir(parents=True, exist_ok=True)
-
     cfg = OmegaConf.load(runpath / "config.yaml")
 
     if hasattr(cfg, "ae_from"):
         cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml")
 
     # Data
-    rollout_strided = rollout // cfg.trajectory.stride + 1
-
     dataset = get_well_multi_dataset(
         path="/mnt/ceph/users/polymathic/the_well/datasets",
         physics=cfg.dataset.physics,
         split=split,
-        steps=rollout_strided,
-        min_dt_stride=cfg.trajectory.stride,
-        max_dt_stride=cfg.trajectory.stride,
+        steps=-1,
         include_filters=cfg.dataset.include_filters,
         augment=[s for s in cfg.dataset.augment if "random" not in s],
     )
@@ -88,6 +89,7 @@ def evaluate(
     item = dataset[index]
 
     x = item["input_fields"]
+    x = x[start :: cfg.trajectory.stride]
     x = x.to(device)
     x = preprocess(x)
     x = rearrange(x, "L H W C -> C L H W")
@@ -120,6 +122,8 @@ def evaluate(
     with torch.no_grad():
         z = encode_traj(autoencoder, x)
         x_ae = decode_traj(autoencoder, z)
+
+    compression = x.numel() / z.numel()
 
     # Emulator
     shape = (z.shape[0], cfg.trajectory.length, *z.shape[2:])
@@ -154,19 +158,20 @@ def evaluate(
     if seed is None:
         seed = torch.initial_seed()
 
-    _ = torch.manual_seed(seed + index)
+    _ = torch.manual_seed(seed + 101 * index + start)
 
-    ## Rollout
+    ## Emulation
     if hasattr(cfg, "denoiser"):
+        method = "diffusion"
         emulate = lambda mask, z_obs: emulate_diffusion(
             denoiser,
             mask,
             z_obs,
             label=label,
-            algorithm=sampling_alg,
-            steps=sampling_steps,
+            **sampling,
         )
     elif hasattr(cfg, "surrogate"):
+        method = "surrogate"
         emulate = lambda mask, z_obs: emulate_surrogate(
             surrogate,
             mask,
@@ -174,57 +179,101 @@ def evaluate(
             label=label,
         )
 
-    z_hat = emulate_rollout(
-        emulate,
-        z,
-        window=cfg.trajectory.length,
-        rollout=rollout_strided,
-        context=context,
-        overlap=overlap,
-    )
+    ensemble = []
 
-    with torch.no_grad():
-        x_hat = decode_traj(autoencoder, z_hat)
+    for _ in trange(samples, ncols=88, ascii=True):
+        z_hat = emulate_rollout(
+            emulate,
+            z,
+            window=cfg.trajectory.length,
+            rollout=z.shape[1],
+            context=(context - 1) // cfg.trajectory.stride + 1,
+            overlap=overlap,
+        )
+
+        with torch.no_grad():
+            x_hat = decode_traj(autoencoder, z_hat)
+
+        ensemble.append(x_hat)
+
+    x_hat = torch.stack(ensemble)
+
+    del z_hat, ensemble
 
     # Evaluation
     lines = []
 
-    for field in range(dataset.metadata.n_fields):
-        for i in range(rollout_strided):
+    for field in range(x.shape[0]):
+        for t in range(x.shape[1]):
             for auto_encoded in (False, True):
                 if auto_encoded:
-                    u, v = x_ae[field, i], x_hat[field, i]
+                    u, v = x_ae[field, t], x_hat[:, field, t]
                 else:
-                    u, v = x[field, i], x_hat[field, i]
+                    u, v = x[field, t], x_hat[:, field, t]
 
-                mse = torch.mean((u - v) ** 2)
+                # Spread
+                if samples > 1:
+                    spread = torch.sqrt(torch.mean(torch.square(v - torch.mean(v, dim=0))))
+                else:
+                    spread = 0.0
+
+                # Skill
+                se = torch.square(u - torch.mean(v, dim=0))
+                mse = torch.mean(se)
                 rmse = torch.sqrt(mse)
                 nrmse = torch.sqrt(mse / torch.mean(u**2))
                 vrmse = torch.sqrt(mse / torch.var(u))
 
-                line = f"{runname},{split},{index},{seed},{(context - 1) * cfg.trajectory.stride + 1},{overlap},{sampling_alg},{sampling_steps},{field},{i * cfg.trajectory.stride},{auto_encoded},"
-                line += f"{rmse},{nrmse},{vrmse},"
-                line += ",".join(map(str, labels))
+                # Power spectrum
+                p_u, k = isotropic_power_spectrum(u, spatial=2)
+                p_v, _ = isotropic_power_spectrum(v, spatial=2)
+
+                sre_p = torch.square(1 - torch.mean(p_v, dim=0) / p_u)
+                rmsre_p = []
+
+                bins = torch.logspace(k[0].log2(), -1.0, steps=4, base=2)
+
+                for i in range(4):
+                    if i < 3:
+                        mask = torch.logical_and(bins[i] <= k, k <= bins[i + 1])
+                    else:
+                        mask = bins[i] <= k
+
+                    rmsre_p.append(torch.sqrt(torch.mean(sre_p[mask])))
+
+                # Write
+                line = f"{runname},{target},{method},{compression},"
+                line += f"{split},{index},{start},{seed},{context},{overlap},{auto_encoded},{field},{t * cfg.trajectory.stride},"
+                line += f"{spread},{rmse},{nrmse},{vrmse},"
+                line += ",".join(map(format, (*rmsre_p, *labels)))
                 line += "\n"
 
                 lines.append(line)
 
-    with open(outpath / "stats.csv", mode="a") as f:
+    outdir = Path(f"~/ceph/mpp-ldm/results/{cfg.dataset.name}")
+    outdir = outdir.expanduser().resolve()
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    with open(outdir / "stats.csv", mode="a") as f:
         f.writelines(lines)
 
-    # Viz
+    # Video
     plt.rcParams["animation.ffmpeg_path"] = "/mnt/sw/nix/store/fz8y69w4c97lcgv1wwk03bd4yh4zank7-ffmpeg-full-6.0-bin/bin/ffmpeg"  # fmt: off
 
     if x.shape[-1] < x.shape[-2]:
         x, x_hat = x.mT, x_hat.mT
 
-    figsize = (x.shape[-1] / 64, x.shape[-2] / 64)
-
-    animation = animate_fields(x.cpu(), x_hat.cpu(), fields=cfg.dataset.fields, figsize=figsize)
-    animation.save(
-        outpath
-        / f"{runname}_{split}_{index:06d}_{seed}_{context}_{overlap}_{sampling_alg}_{sampling_steps}.mp4"
-    )
+    for i in range(min(samples, record)):
+        animation = animate_fields(
+            x,
+            x_hat[i],
+            fields=cfg.dataset.fields,
+            figsize=(x.shape[-1] / 64, x.shape[-2] / 64),
+        )
+        animation.save(
+            outdir
+            / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{seed}_{context}_{overlap}_{i:03d}.mp4"
+        )
 
 
 if __name__ == "__main__":
@@ -243,25 +292,14 @@ if __name__ == "__main__":
     ## RNG
     random.seed(cfg.seed)
 
-    if cfg.array is None:
-        array = [random.random() for _ in range(cfg.samples)]
+    if isinstance(cfg.array, int):
+        array = [random.random() for _ in range(cfg.array)]
     else:
         array = cfg.array
 
     # Job
     def launch(i: int):
-        evaluate(
-            run=cfg.run,
-            target=cfg.target,
-            split=cfg.split,
-            index=array[i],
-            context=cfg.context,
-            overlap=cfg.overlap,
-            rollout=cfg.rollout,
-            sampling_alg=cfg.sampling.alg,
-            sampling_steps=cfg.sampling.steps,
-            seed=cfg.seed,
-        )
+        evaluate(index=array[i], **cfg)
 
     dawgz.schedule(
         dawgz.job(

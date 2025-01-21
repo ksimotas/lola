@@ -4,15 +4,16 @@ defaults:
 run: ???
 target: "state"
 split: "valid"
-array: null
-samples: 64
+array: 16
+start: 0
 context: 1
 overlap: 1
-rollout: 64
+samples: 1
 sampling:
-  alg: "lms"
+  algorithm: "lms"
   steps: 64
 seed: 0
+record: 1
 
 compute:
   cpus: 4
