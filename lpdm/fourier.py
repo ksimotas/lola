@@ -58,6 +58,8 @@ def isotropic_power_spectrum(x: Tensor, spatial: int = 2) -> Tuple[Tensor, Tenso
         shape :math:`(*, B)` and :math:`(B)`, respectively.
     """
 
+    x = torch.as_tensor(x)
+
     batch, shape = x.shape[:-spatial], x.shape[-spatial:]
 
     # Binning
@@ -87,6 +89,8 @@ def isotropic_cross_correlation(x: Tensor, y: Tensor, spatial: int = 2) -> Tuple
         The binned cross correlation coefficients and the frequency bins (in cycles per
         pixel), with shape :math:`(*, B)` and :math:`(B)`, respectively.
     """
+
+    x = torch.as_tensor(x)
 
     batch, shape = x.shape[:-spatial], x.shape[-spatial:]
 

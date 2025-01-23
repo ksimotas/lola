@@ -4,10 +4,10 @@ import math
 import matplotlib.animation as ani
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 
 from numpy.typing import ArrayLike
 from PIL import Image
-from torch import Tensor
 from typing import Optional, Sequence, Tuple
 
 from .fourier import isotropic_power_spectrum
@@ -24,6 +24,12 @@ def animate_fields(
     wait: float = 0.2,
 ) -> ani.Animation:
     C, L, _, _ = x.shape
+
+    if torch.is_tensor(x):
+        x = x.numpy(force=True)
+
+    if torch.is_tensor(y):
+        y = y.numpy(force=True)
 
     if timesteps is None:
         timesteps = list(range(L))
@@ -120,6 +126,12 @@ def draw_fields(
 ) -> plt.Figure:
     C, L, _, _ = x.shape
 
+    if torch.is_tensor(x):
+        x = x.numpy(force=True)
+
+    if torch.is_tensor(y):
+        y = y.numpy(force=True)
+
     if timesteps is None:
         timesteps = list(range(L))
 
@@ -186,12 +198,18 @@ def draw_fields(
 
 
 def draw_psd(
-    x: Tensor,
-    y: Optional[Tensor] = None,
+    x: ArrayLike,
+    y: Optional[ArrayLike] = None,
     fields: Optional[Sequence[str]] = None,
     figsize: Tuple[float, float] = (3.2, 3.2),
 ) -> plt.Figure:
     C, *shape = x.shape
+
+    if torch.is_tensor(x):
+        x = x.numpy(force=True)
+
+    if torch.is_tensor(y):
+        y = y.numpy(force=True)
 
     fig, axs = plt.subplots(
         nrows=1,
@@ -231,7 +249,8 @@ def field2rgb(
     vmax: Optional[float] = None,
     cmap: str = "magma",
 ) -> ArrayLike:
-    x = np.asarray(x)
+    if torch.is_tensor(x):
+        x = x.numpy(force=True)
 
     if vmin is None:
         vmin = np.min(x)
