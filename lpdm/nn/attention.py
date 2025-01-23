@@ -68,6 +68,7 @@ class MultiheadSelfAttention(nn.Module):
             x: The input tokens :math:`x`, with shape :math:`(*, L, H \times C)`.
             theta: Optional rotary positional embedding :math:`\theta`,
                 with shape :math:`(*, L, H \times C / 2)`.
+            mask: Optional attention mask, with shape :math:`(L, L)`.
 
         Returns:
             The ouput tokens :math:`y`, with shape :math:`(*, L, H \times C)`.
@@ -83,13 +84,13 @@ class MultiheadSelfAttention(nn.Module):
 
         if isinstance(mask, xfs.SparseCSRTensor):
             y = xfa.scaled_dot_product_attention(
-                q=rearrange(q, "B H L C -> (B H) L C"),
-                k=rearrange(k, "B H L C -> (B H) L C"),
-                v=rearrange(v, "B H L C -> (B H) L C"),
+                q=rearrange(q, "... L C -> (...) L C"),
+                k=rearrange(k, "... L C -> (...) L C"),
+                v=rearrange(v, "... L C -> (...) L C"),
                 att_mask=xfa.SparseCS._wrap(mask),
                 dropout=self.dropout if self.training else None,
             )
-            y = rearrange(y, "(B H) L C -> B H L C", H=self.heads)
+            y = y.reshape(q.shape[:-2] + y.shape[-2:])
         else:
             y = torch.nn.functional.scaled_dot_product_attention(
                 query=q,
