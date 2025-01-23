@@ -6,7 +6,7 @@ import dawgz
 from functools import partial
 from omegaconf import DictConfig
 
-from lpdm.hydra import compose
+from lola.hydra import compose
 
 
 def get_stats(cfg: DictConfig):
@@ -17,8 +17,8 @@ def get_stats(cfg: DictConfig):
     from tabulate import tabulate
     from torch.utils.data import DataLoader
 
-    from lpdm.data import field_preprocess, get_well_multi_dataset
-    from lpdm.utils import process_cpu_count
+    from lola.data import field_preprocess, get_well_multi_dataset
+    from lola.utils import process_cpu_count
 
     # Data
     trainset = get_well_multi_dataset(

@@ -1,6 +1,6 @@
 [project]
-name = "lpdm"
-description = "Latent Physics Diffusion Model"
+name = "lola"
+description = "Lost in Latent Space"
 version = "0.0.0"
 dependencies = [
   "azula==0.2.4",
@@ -46,4 +46,4 @@ section-order = ["future", "third-party", "first-party", "local-folder"]
 preview = true
 
 [tool.setuptools.packages.find]
-include = ["lpdm*"]
+include = ["lola*"]

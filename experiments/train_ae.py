@@ -7,7 +7,7 @@ import wandb
 from functools import partial
 from omegaconf import DictConfig
 
-from lpdm.hydra import compose
+from lola.hydra import compose
 
 
 def train(runid: str, cfg: DictConfig):
@@ -23,11 +23,11 @@ def train(runid: str, cfg: DictConfig):
     from torch.nn.parallel import DistributedDataParallel
     from tqdm import trange
 
-    from lpdm.autoencoder import AutoEncoderLoss, get_autoencoder
-    from lpdm.data import field_preprocess, get_dataloader, get_well_inputs, get_well_multi_dataset
-    from lpdm.nn.utils import load_state_dict
-    from lpdm.optim import get_optimizer, safe_gd_step
-    from lpdm.utils import randseed
+    from lola.autoencoder import AutoEncoderLoss, get_autoencoder
+    from lola.data import field_preprocess, get_dataloader, get_well_inputs, get_well_multi_dataset
+    from lola.nn.utils import load_state_dict
+    from lola.optim import get_optimizer, safe_gd_step
+    from lola.utils import randseed
 
     # DDP
     dist.init_process_group(backend="nccl")
@@ -152,7 +152,7 @@ def train(runid: str, cfg: DictConfig):
     if rank == 0:
         run = wandb.init(
             entity=cfg.wandb.entity,
-            project="mpp-ae",
+            project="lola-ae",
             id=runid,
             name=runname,
             config=OmegaConf.to_container(cfg),

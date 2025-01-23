@@ -1,15 +1,15 @@
-# MPP x Latent Diffusion Models
+# Lost in Latent Space: An Empirical Study of Latent Diffusion Models for Physics Emulation
 
 ## Code
 
-To run the experiments, it is necessary to have access to a [Slurm](https://slurm.schedmd.com) cluster, to login to a [Weights & Biases](https://wandb.ai) account and to install the [lpdm](lpdm) module as a package. First, create a new Python environment, for example with [venv](https://docs.python.org/3/library/venv.html).
+To run the experiments, it is necessary to have access to a [Slurm](https://slurm.schedmd.com) cluster, to login to a [Weights & Biases](https://wandb.ai) account and to install the [lola](lola) module as a package. First, create a new Python environment, for example with [venv](https://docs.python.org/3/library/venv.html).
 
 ```
-python -m venv ~/.venvs/lpdm
-source ~/.venvs/lpdm/bin/activate
+python -m venv ~/.venvs/lola
+source ~/.venvs/lola/bin/activate
 ```
 
-Then, install the [lpdm](lpdm) module as an [editable](https://pip.pypa.io/en/latest/topics/local-project-installs) package with its dependencies.
+Then, install the [lola](lola) module as an [editable](https://pip.pypa.io/en/latest/topics/local-project-installs) package with its dependencies.
 
 ```
 pip install --editable .[all] --extra-index-url https://download.pytorch.org/whl/cu121

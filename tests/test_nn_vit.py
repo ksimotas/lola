@@ -1,11 +1,11 @@
-r"""Tests for the lpdm.nn.dit module."""
+r"""Tests for the lola.nn.dit module."""
 
 import pytest
 import torch
 
 from pathlib import Path
 
-from lpdm.nn.vit import ViT
+from lola.nn.vit import ViT
 
 
 @pytest.mark.parametrize("length", [16])

@@ -1,4 +1,4 @@
-r"""Tests for the lpdm.nn.unet module.
+r"""Tests for the lola.nn.unet module.
 
 Credits:
     https://github.com/probabilists/azula
@@ -10,7 +10,7 @@ import torch
 from pathlib import Path
 from typing import Dict
 
-from lpdm.nn.unet import UNet
+from lola.nn.unet import UNet
 
 
 @pytest.mark.parametrize("length", [15, 16])

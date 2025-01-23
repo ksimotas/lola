@@ -8,7 +8,7 @@ import os
 from omegaconf import DictConfig
 from pathlib import Path
 
-from lpdm.hydra import compose
+from lola.hydra import compose
 
 
 def cache_latent(
@@ -27,8 +27,8 @@ def cache_latent(
     from pathlib import Path
     from tqdm import trange
 
-    from lpdm.autoencoder import get_autoencoder
-    from lpdm.data import field_preprocess, get_well_dataset, get_well_inputs
+    from lola.autoencoder import get_autoencoder
+    from lola.data import field_preprocess, get_well_dataset, get_well_inputs
 
     device = torch.device("cuda")
 

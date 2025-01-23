@@ -8,7 +8,7 @@ from omegaconf import DictConfig
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Union
 
-from lpdm.hydra import compose
+from lola.hydra import compose
 
 
 def evaluate(
@@ -38,19 +38,19 @@ def evaluate(
     from omegaconf import OmegaConf
     from pathlib import Path
 
-    from lpdm.autoencoder import get_autoencoder
-    from lpdm.data import field_preprocess, get_well_inputs, get_well_multi_dataset
-    from lpdm.diffusion import get_denoiser
-    from lpdm.emulation import (
+    from lola.autoencoder import get_autoencoder
+    from lola.data import field_preprocess, get_well_inputs, get_well_multi_dataset
+    from lola.diffusion import get_denoiser
+    from lola.emulation import (
         decode_traj,
         emulate_diffusion,
         emulate_rollout,
         emulate_surrogate,
         encode_traj,
     )
-    from lpdm.fourier import isotropic_cross_correlation, isotropic_power_spectrum
-    from lpdm.plot import animate_fields
-    from lpdm.surrogate import get_surrogate
+    from lola.fourier import isotropic_cross_correlation, isotropic_power_spectrum
+    from lola.plot import animate_fields
+    from lola.surrogate import get_surrogate
 
     device = torch.device("cuda")
 
