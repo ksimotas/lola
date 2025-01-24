@@ -81,6 +81,7 @@ def emulate_diffusion(
     return x0
 
 
+@torch.no_grad()
 def emulate_rollout(
     emulate: Callable[[BoolTensor, Tensor], Tensor],
     x: Tensor,
