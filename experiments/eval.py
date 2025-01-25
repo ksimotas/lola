@@ -33,6 +33,7 @@ def evaluate(
     import torch.nn as nn
 
     from einops import rearrange
+    from filelock import FileLock
     from functools import partial
     from omegaconf import OmegaConf
     from pathlib import Path
@@ -248,8 +249,9 @@ def evaluate(
     outdir = outdir.expanduser().resolve()
     outdir.mkdir(parents=True, exist_ok=True)
 
-    with open(outdir / "stats.csv", mode="a") as f:
-        f.writelines(lines)
+    with FileLock(outdir / "stats.csv.lock"):
+        with open(outdir / "stats.csv", mode="a") as f:
+            f.writelines(lines)
 
     # Video
     plt.rcParams["animation.ffmpeg_path"] = "/mnt/sw/nix/store/fz8y69w4c97lcgv1wwk03bd4yh4zank7-ffmpeg-full-6.0-bin/bin/ffmpeg"  # fmt: off
