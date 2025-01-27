@@ -90,7 +90,8 @@ def isotropic_cross_correlation(x: Tensor, y: Tensor, spatial: int = 2) -> Tuple
         pixel), with shape :math:`(*, B)` and :math:`(B)`, respectively.
     """
 
-    x = torch.as_tensor(x)
+    x, y = torch.as_tensor(x), torch.as_tensor(y)
+    x, y = torch.broadcast_tensors(x, y)
 
     batch, shape = x.shape[:-spatial], x.shape[-spatial:]
 

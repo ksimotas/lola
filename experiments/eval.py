@@ -48,7 +48,7 @@ def evaluate(
         emulate_surrogate,
         encode_traj,
     )
-    from lpdm.fourier import isotropic_power_spectrum
+    from lpdm.fourier import isotropic_cross_correlation, isotropic_power_spectrum
     from lpdm.nn.autoencoder import get_autoencoder
     from lpdm.plot import animate_fields
     from lpdm.surrogate import get_surrogate
@@ -219,12 +219,17 @@ def evaluate(
                 nrmse = torch.sqrt(mse / torch.mean(u**2))
                 vrmse = torch.sqrt(mse / torch.var(u))
 
-                # Power spectrum
+                # Fourier
                 p_u, k = isotropic_power_spectrum(u, spatial=2)
                 p_v, _ = isotropic_power_spectrum(v, spatial=2)
+                p_v = torch.mean(p_v, dim=0)
+                c_uv, _ = isotropic_cross_correlation(u, v, spatial=2)
+                c_uv = torch.mean(c_uv, dim=0)
 
-                sre_p = torch.square(1 - torch.mean(p_v, dim=0) / p_u)
-                rmsre_p = []
+                sre_p = torch.square(1 - p_v / p_u)
+                sre_c = torch.square(1 - c_uv / torch.sqrt(p_u * p_v))
+
+                rmsre_f = []
 
                 bins = torch.logspace(k[0].log2(), -1.0, steps=4, base=2)
 
@@ -234,13 +239,14 @@ def evaluate(
                     else:
                         mask = bins[i] <= k
 
-                    rmsre_p.append(torch.sqrt(torch.mean(sre_p[mask])))
+                    rmsre_f.append(torch.sqrt(torch.mean(sre_p[mask])))
+                    rmsre_f.append(torch.sqrt(torch.mean(sre_c[mask])))
 
                 # Write
                 line = f"{runname},{target},{method},{compression},"
                 line += f"{split},{index},{start},{seed},{context},{overlap},{auto_encoded},{field},{t * cfg.trajectory.stride},"
                 line += f"{spread},{rmse},{nrmse},{vrmse},"
-                line += ",".join(map(format, (*rmsre_p, *labels)))
+                line += ",".join(map(format, (*rmsre_f, *labels)))
                 line += "\n"
 
                 lines.append(line)
