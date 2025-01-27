@@ -1,4 +1,6 @@
 name: "empire"
 partition: "cuny"
 constraint: ""
+exclude: ""
 datasets: "/mnt/lustre/cuny/frozet/the_well/datasets"
+storage: "~/ceph/mpp-ldm"

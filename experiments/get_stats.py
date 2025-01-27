@@ -4,16 +4,12 @@ import argparse
 import dawgz
 
 from functools import partial
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from lpdm.hydra import compose
 
 
-def get_stats(
-    dataset: DictConfig,
-    samples: int,
-    datasets: str = "/mnt/ceph/users/polymathic/the_well/datasets",
-):
+def get_stats(cfg: DictConfig):
     import itertools
     import torch
 
@@ -24,16 +20,13 @@ def get_stats(
     from lpdm.data import field_preprocess, get_well_multi_dataset
     from lpdm.utils import process_cpu_count
 
-    print(OmegaConf.to_yaml(dataset), flush=True)
-    print()
-
     # Data
     trainset = get_well_multi_dataset(
-        path=datasets,
-        physics=dataset.physics,
+        path=cfg.server.datasets,
+        physics=cfg.dataset.physics,
         split="train",
         steps=1,
-        include_filters=dataset.include_filters,
+        include_filters=cfg.dataset.include_filters,
     )
 
     train_loader = DataLoader(
@@ -45,7 +38,7 @@ def get_stats(
 
     preprocess = partial(
         field_preprocess,
-        transform=dataset.transform,
+        transform=cfg.dataset.transform,
     )
 
     # Fetch
@@ -54,7 +47,7 @@ def get_stats(
     first_moments = []
     second_moments = []
 
-    for batch in itertools.islice(train_loader, samples):
+    for batch in itertools.islice(train_loader, cfg.samples):
         x = batch["input_fields"]
         x = preprocess(x)
         x = rearrange(x, "... C -> (...) C")
@@ -78,31 +71,35 @@ def get_stats(
 
     rows = [(k, *v) for k, v in stats.items()]
 
-    print(tabulate(rows, headers=("Stat", *dataset.fields)), flush=True)
+    print(tabulate(rows, headers=("Stat", *cfg.dataset.fields)), flush=True)
 
 
 if __name__ == "__main__":
     # Parser
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default="./configs/dataset/euler_open.yaml", type=str)
-    parser.add_argument("--samples", type=int, default=1024)
+    parser.add_argument("overrides", nargs="*", type=str)
 
     args = parser.parse_args()
 
     # Config
-    dataset = compose(config_file=args.dataset)
+    cfg = compose(
+        config_file="./configs/get_stats.yaml",
+        overrides=args.overrides,
+    )
 
     # Job
     dawgz.schedule(
         dawgz.job(
-            f=partial(get_stats, dataset, args.samples),
-            name="get_stats",
-            cpus=16,
-            gpus=1,
-            ram="64GB",
-            time="00:15:00",
-            partition="gpu",
+            f=partial(get_stats, cfg.dataset, args.samples),
+            name="stats",
+            cpus=cfg.compute.cpus,
+            gpus=cfg.compute.gpus,
+            ram=cfg.compute.ram,
+            time=cfg.compute.time,
+            partition=cfg.server.partition,
+            constraint=cfg.server.constraint,
+            exclude=cfg.server.exclude,
         ),
-        name=f"stats {dataset.name}",
+        name=f"stats {cfg.dataset.name}",
         backend="slurm",
     )

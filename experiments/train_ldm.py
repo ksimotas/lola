@@ -22,7 +22,7 @@ def train(runid: str, cfg: DictConfig):
     from torch.nn.parallel import DistributedDataParallel
     from tqdm import trange
 
-    from lpdm.data import MiniWellDataset, find_hdf5, get_dataloader
+    from lpdm.data import MiniWellDataset, find_hdf5, get_dataloader, get_well_inputs
     from lpdm.diffusion import DenoiserLoss, get_denoiser
     from lpdm.emulation import random_context_mask
     from lpdm.optim import ExponentialMovingAverage, get_optimizer, safe_gd_step
@@ -43,18 +43,19 @@ def train(runid: str, cfg: DictConfig):
     assert cfg.train.batch_size % world_size == 0
     assert cfg.train.epoch_size % (cfg.train.batch_size * cfg.train.accumulation) == 0
 
-    runname = f"{cfg.dataset.name}_{cfg.denoiser.name}_{cfg.optim.name}"
+    runname = f"{runid}_{cfg.dataset.name}_{cfg.denoiser.name}"
 
-    runpath = Path(f"~/ceph/mpp-ldm/runs/ldm/{runid}_{runname}")
+    runpath = Path(f"{cfg.server.storage}/runs/ldm/{runname}")
     runpath = runpath.expanduser().resolve()
     runpath.mkdir(parents=True, exist_ok=True)
 
     if rank == 0:
-        os.symlink(os.path.realpath(cfg.ae_from, strict=True), runpath / "autoencoder")
+        os.symlink(os.path.realpath(cfg.ae_run, strict=True), runpath / "autoencoder")
 
     dist.barrier(device_ids=[device_id])
 
     with open_dict(cfg):
+        cfg.name = runname
         cfg.path = str(runpath)
         cfg.seed = randseed(runid)
 
@@ -62,19 +63,19 @@ def train(runid: str, cfg: DictConfig):
         OmegaConf.save(cfg, runpath / "config.yaml")
 
     # Stem
-    if cfg.fork_from is None:
+    if cfg.fork.run is None:
         counter = {
             "epoch": 0,
             "update_samples": 0,
             "update_steps": 0,
         }
     else:
-        stem = wandb.Api().run(path=cfg.fork_from)
-        stem_dir = Path(stem.config["path"]).name
-        stem_path = Path(f"~/ceph/mpp-ldm/runs/ldm/{stem_dir}")
+        stem = wandb.Api().run(path=cfg.fork.run)
+        stem_name = Path(stem.config["path"]).name
+        stem_path = Path(f"{cfg.server.storage}/runs/ldm/{stem_name}")
         stem_path = stem_path.expanduser().resolve()
         stem_state = torch.load(
-            stem_path / f"{cfg.fork_target}.pth", weights_only=True, map_location=device
+            stem_path / f"{cfg.fork.target}.pth", weights_only=True, map_location=device
         )
 
         counter = {
@@ -96,54 +97,43 @@ def train(runid: str, cfg: DictConfig):
         for split in ("train", "valid")
     }
 
-    trainset = MiniWellDataset.from_files(
-        files=files["train"],
-        steps=cfg.trajectory.length,
-        stride=cfg.trajectory.stride,
-    )
+    dataset = {
+        split: MiniWellDataset.from_files(
+            files=files[split],
+            steps=cfg.trajectory.length,
+            stride=cfg.trajectory.stride,
+        )
+        for split in ("train", "valid")
+    }
 
-    train_loader = get_dataloader(
-        dataset=trainset,
-        batch_size=cfg.train.batch_size // world_size,
-        shuffle=True,
-        infinite=True,
-        num_workers=cfg.compute.cpus_per_gpu,
-        rank=rank,
-        world_size=world_size,
-        seed=cfg.seed,
-    )
+    train_loader, valid_loader = [
+        get_dataloader(
+            dataset=dataset[split],
+            batch_size=cfg.train.batch_size // world_size,
+            shuffle=True if split == "train" else False,
+            infinite=True,
+            num_workers=cfg.compute.cpus_per_gpu,
+            rank=rank,
+            world_size=world_size,
+            seed=cfg.seed,
+        )
+        for split in ("train", "valid")
+    ]
 
-    validset = MiniWellDataset.from_files(
-        files=files["valid"],
-        steps=cfg.trajectory.length,
-        stride=cfg.trajectory.stride,
-    )
-
-    valid_loader = get_dataloader(
-        dataset=validset,
-        batch_size=cfg.train.batch_size // world_size,
-        shuffle=False,
-        infinite=True,
-        num_workers=cfg.compute.cpus_per_gpu,
-        rank=rank,
-        world_size=world_size,
-        seed=cfg.seed,
-    )
-
-    batch = next(valid_loader)
-    batch["state"] = rearrange(batch["state"], "B L C H W -> B C L H W")
+    z, label = get_well_inputs(next(valid_loader))
+    z = rearrange(z, "B L H W C -> B C L H W")
 
     # Model, optimizer & scheduler
     denoiser = get_denoiser(
-        shape=batch["state"].shape[1:],
-        label_features=batch["label"].shape[1],
+        shape=z.shape[1:],
+        label_features=label.shape[1],
         masked=True,
         **cfg.denoiser,
     ).to(device)
 
     denoiser_loss = DenoiserLoss(**cfg.denoiser.loss).to(device)
 
-    if cfg.fork_from is not None:
+    if cfg.fork.run is not None:
         denoiser.load_state_dict(stem_state)
         del stem_state
 
@@ -167,7 +157,7 @@ def train(runid: str, cfg: DictConfig):
     if rank == 0:
         run = wandb.init(
             entity=cfg.wandb.entity,
-            project="mpp-ldm-denoiser",
+            project="mpp-ldm",
             id=runid,
             name=runname,
             config=OmegaConf.to_container(cfg),
@@ -188,16 +178,10 @@ def train(runid: str, cfg: DictConfig):
         losses, grads = [], []
 
         for i in range(cfg.train.epoch_size // cfg.train.batch_size):
-            batch = next(train_loader)
+            z, label = get_well_inputs(next(train_loader), device=device)
+            z = rearrange(z, "B L H W C -> B C L H W")
 
-            z = batch["state"]
-            z = z.to(device, non_blocking=True)
-            z = rearrange(z, "B L C H W -> B C L H W")
-
-            label = batch["label"]
-            label = label.to(device, non_blocking=True)
-
-            mask = random_context_mask(z, rho=0.66, atleast=1)
+            mask = random_context_mask(z, **cfg.trajectory.context)
 
             if (i + 1) % cfg.train.accumulation == 0:
                 loss = denoiser_loss(denoiser, z, mask=mask, label=label)
@@ -254,16 +238,10 @@ def train(runid: str, cfg: DictConfig):
 
         with torch.no_grad():
             for _ in range(cfg.train.epoch_size // cfg.train.batch_size):
-                batch = next(valid_loader)
+                z, label = get_well_inputs(next(valid_loader), device=device)
+                z = rearrange(z, "B L H W C -> B C L H W")
 
-                z = batch["state"]
-                z = z.to(device, non_blocking=True)
-                z = rearrange(z, "B L C H W -> B C L H W")
-
-                label = batch["label"]
-                label = label.to(device, non_blocking=True)
-
-                mask = random_context_mask(z, rho=0.66, atleast=1)
+                mask = random_context_mask(z, **cfg.trajectory.context)
 
                 loss = denoiser_loss(denoiser, z, mask=mask, label=label)
                 losses.append(loss)
@@ -350,7 +328,7 @@ if __name__ == "__main__":
             time=cfg.compute.time,
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
-            exclude="workergpu156",
+            exclude=cfg.server.exclude,
         ),
         name=f"training ldm {runid}",
         backend="slurm",

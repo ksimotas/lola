@@ -9,6 +9,10 @@ defaults:
 trajectory:
   length: 5
   stride: 1
+  context:
+    lmbda: 1.0
+    rho: 0.66
+    atleast: 1
 
 train:
   epochs: 1024
@@ -17,8 +21,9 @@ train:
   accumulation: 1
   ema_decay: 0.9999
 
-fork_from: null
-fork_target: "state"
+fork:
+  run: null
+  target: "state"
 
 compute:
   nodes: 1

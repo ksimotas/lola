@@ -30,7 +30,7 @@ def cache_latent(
     from pathlib import Path
     from tqdm import trange
 
-    from lpdm.data import field_preprocess, get_label, get_well_dataset
+    from lpdm.data import field_preprocess, get_well_dataset, get_well_inputs
     from lpdm.nn.autoencoder import get_autoencoder
 
     device = torch.device("cuda")
@@ -88,10 +88,7 @@ def cache_latent(
 
             for j in range(repeat):
                 while True:
-                    batch = dataset[i]
-
-                    x = batch["input_fields"]
-                    x = x.to(device, non_blocking=True)
+                    x, label = get_well_inputs(dataset[i], device=device)
                     x = preprocess(x)
                     x = rearrange(x, "L H W C -> L C H W")
 
@@ -105,8 +102,6 @@ def cache_latent(
 
                 with torch.no_grad():
                     z = autoencoder.encode(x)
-
-                label = get_label(batch)
 
                 if "state" not in f:
                     f.create_dataset(
@@ -173,6 +168,7 @@ if __name__ == "__main__":
             time=cfg.compute.time,
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
+            exclude=cfg.server.exclude,
         ),
         name=f"cache {Path(cfg.run).name}",
         backend="slurm",

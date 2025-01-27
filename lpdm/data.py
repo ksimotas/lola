@@ -1,16 +1,5 @@
 r"""Data and datasets helpers."""
 
-__all__ = [
-    "field_preprocess",
-    "field_postprocess",
-    "find_hdf5",
-    "get_well_dataset",
-    "get_dataloader",
-    "infinite_cycle",
-    "LazyShuffleDataset",
-    "MiniWellDataset",
-]
-
 import glob
 import h5py
 import itertools
@@ -19,6 +8,7 @@ import os
 import random
 import torch
 
+from einops import rearrange
 from the_well.data import WellDataset
 from the_well.data.augmentation import (
     Augmentation,
@@ -36,24 +26,13 @@ from torch.utils.data import (
     DistributedSampler,
     IterableDataset,
 )
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Union
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, Union
 
 TRANSFORMS = {
     "log": (torch.log, torch.exp),
     "log1p": (torch.log1p, torch.expm1),
     "arcsinh": (torch.arcsinh, torch.sinh),
 }
-
-
-def get_label(item: Dict[str, Tensor]):
-    r"""Returns the label of an item."""
-
-    scalars = item["constant_scalars"]
-    bcs = item["boundary_conditions"]
-
-    *batch, _ = scalars.shape
-
-    return torch.cat((scalars, bcs.reshape(*batch, -1)), dim=-1)
 
 
 def field_preprocess(
@@ -261,6 +240,42 @@ def get_well_dataset(
         transform=augmentation,
         **kwargs,
     )
+
+
+def get_well_inputs(
+    item: Dict[str, Tensor],
+    device: Optional[torch.device] = None,
+) -> Tuple[Tensor, Tensor]:
+    r"""Returns the fields and label of a :class:`WellDataset` item.
+
+    Returns:
+        The field tensor :math:`x` and label vector, with shape :math:`(*, L, H, W, C)`
+        and :math:`(*, D)`, respectively.
+    """
+
+    if "input_fields" in item:
+        x = item["input_fields"]
+        x = x.to(device=device, non_blocking=True)
+
+        scalars = item["constant_scalars"]
+        scalars = scalars.to(device=device, non_blocking=True)
+
+        bcs = item["boundary_conditions"]
+        bcs = bcs.to(device=device, non_blocking=True)
+        bcs = rearrange(bcs, "... H W -> ... (H W)")
+
+        label = torch.cat((scalars, bcs), dim=-1)
+    elif "state" in item:
+        x = item["state"]
+        x = x.to(device=device, non_blocking=True)
+        x = rearrange(x, "... L C H W -> ... L H W C")
+
+        label = item["label"]
+        label = label.to(device=device, non_blocking=True)
+    else:
+        raise KeyError("missing inputs")
+
+    return x, label
 
 
 def get_dataloader(

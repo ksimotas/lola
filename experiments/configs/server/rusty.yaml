@@ -1,4 +1,6 @@
 name: "rusty"
 partition: "gpu"
 constraint: "h100|a100-80gb"
+exclude: "workergpu156"
 datasets: "/mnt/ceph/users/polymathic/the_well/datasets"
+storage: "~/ceph/mpp-ldm"

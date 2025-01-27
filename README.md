@@ -21,12 +21,6 @@ Optionally, we provide [pre-commit hooks](pre-commit.yml) to automatically detec
 pre-commit install --config pre-commit.yaml
 ```
 
-Before running the [experiments](experiments/), create a symlink to the Well datasets.
-
-```
-ln -s /mnt/ceph/users/polymathic/the_well ~/ceph/the_well
-```
-
 ## Experiments
 
 ```
@@ -55,16 +49,16 @@ python cache_latents.py run=??? dataset=rayleigh_benard dataset.augment=["log_sc
 
 ```
 python train_dm.py dataset=euler_all compute.nodes=2
-python train_dm.py dataset=rayleigh_benard
 python train_sm.py dataset=euler_all compute.nodes=2
+python train_dm.py dataset=rayleigh_benard
 python train_sm.py dataset=rayleigh_benard
 ```
 
-## Latent-space DMs and SMs
+### Latent-space DMs and SMs
 
 ```
-python train_ldm.py ae_from=??? dataset=euler_all
-python train_ldm.py ae_from=??? dataset=rayleigh_benard
-python train_sdm.py ae_from=??? dataset=euler_all
-python train_sdm.py ae_from=??? dataset=rayleigh_benard
+python train_ldm.py dataset=euler_all ae_run=???
+python train_sdm.py dataset=euler_all ae_run=???
+python train_ldm.py dataset=rayleigh_benard ae_run=???
+python train_sdm.py dataset=rayleigh_benard ae_run=???
 ```

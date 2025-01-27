@@ -23,7 +23,7 @@ def train(runid: str, cfg: DictConfig):
     from torch.nn.parallel import DistributedDataParallel
     from tqdm import trange
 
-    from lpdm.data import field_preprocess, get_dataloader, get_well_multi_dataset
+    from lpdm.data import field_preprocess, get_dataloader, get_well_inputs, get_well_multi_dataset
     from lpdm.loss import WeightedLoss
     from lpdm.nn.autoencoder import get_autoencoder
     from lpdm.optim import get_optimizer, safe_gd_step
@@ -44,13 +44,14 @@ def train(runid: str, cfg: DictConfig):
     assert cfg.train.batch_size % world_size == 0
     assert cfg.train.epoch_size % (cfg.train.batch_size * cfg.train.accumulation) == 0
 
-    runname = f"{cfg.dataset.name}_{cfg.ae.name}_{cfg.optim.name}"
+    runname = f"{runid}_{cfg.dataset.name}_{cfg.ae.name}"
 
-    runpath = Path(f"~/ceph/mpp-ldm/runs/ae/{runid}_{runname}")
+    runpath = Path(f"{cfg.server.storage}/runs/ae/{runname}")
     runpath = runpath.expanduser().resolve()
     runpath.mkdir(parents=True, exist_ok=True)
 
     with open_dict(cfg):
+        cfg.name = runname
         cfg.path = str(runpath)
         cfg.seed = randseed(runid)
 
@@ -58,19 +59,19 @@ def train(runid: str, cfg: DictConfig):
         OmegaConf.save(cfg, runpath / "config.yaml")
 
     # Stem
-    if cfg.fork_from is None:
+    if cfg.fork.run is None:
         counter = {
             "epoch": 0,
             "update_samples": 0,
             "update_steps": 0,
         }
     else:
-        stem = wandb.Api().run(path=cfg.fork_from)
-        stem_dir = Path(stem.config["path"]).name
-        stem_path = Path(f"~/ceph/mpp-ldm/runs/ae/{stem_dir}")
+        stem = wandb.Api().run(path=cfg.fork.run)
+        stem_name = Path(stem.config["path"]).name
+        stem_path = Path(f"{cfg.server.storage}/runs/ae/{stem_name}")
         stem_path = stem_path.expanduser().resolve()
         stem_state = torch.load(
-            stem_path / f"{cfg.fork_target}.pth", weights_only=True, map_location=device
+            stem_path / f"{cfg.fork.target}.pth", weights_only=True, map_location=device
         )
 
         counter = {
@@ -80,45 +81,31 @@ def train(runid: str, cfg: DictConfig):
         }
 
     # Data
-    trainset = get_well_multi_dataset(
-        path=cfg.server.datasets,
-        physics=cfg.dataset.physics,
-        split="train",
-        steps=1,
-        include_filters=cfg.dataset.include_filters,
-        augment=cfg.dataset.augment,
-    )
+    dataset = {
+        split: get_well_multi_dataset(
+            path=cfg.server.datasets,
+            physics=cfg.dataset.physics,
+            split=split,
+            steps=1,
+            include_filters=cfg.dataset.include_filters,
+            augment=cfg.dataset.augment,
+        )
+        for split in ("train", "valid")
+    }
 
-    train_loader = get_dataloader(
-        dataset=trainset,
-        batch_size=cfg.train.batch_size // world_size,
-        shuffle="lazy" if cfg.train.lazy_shuffle else True,
-        infinite=True,
-        num_workers=cfg.compute.cpus_per_gpu,
-        rank=rank,
-        world_size=world_size,
-        seed=cfg.seed,
-    )
-
-    validset = get_well_multi_dataset(
-        path=cfg.server.datasets,
-        physics=cfg.dataset.physics,
-        split="valid",
-        steps=1,
-        include_filters=cfg.dataset.include_filters,
-        augment=cfg.dataset.augment,
-    )
-
-    valid_loader = get_dataloader(
-        dataset=validset,
-        batch_size=cfg.train.batch_size // world_size,
-        shuffle=False,
-        infinite=True,
-        num_workers=cfg.compute.cpus_per_gpu,
-        rank=rank,
-        world_size=world_size,
-        seed=cfg.seed,
-    )
+    train_loader, valid_loader = [
+        get_dataloader(
+            dataset=dataset[split],
+            batch_size=cfg.train.batch_size // world_size,
+            shuffle=True if split == "train" else False,
+            infinite=True,
+            num_workers=cfg.compute.cpus_per_gpu,
+            rank=rank,
+            world_size=world_size,
+            seed=cfg.seed,
+        )
+        for split in ("train", "valid")
+    ]
 
     preprocess = partial(
         field_preprocess,
@@ -129,13 +116,13 @@ def train(runid: str, cfg: DictConfig):
 
     # Model, optimizer & scheduler
     autoencoder = get_autoencoder(
-        pix_channels=trainset.metadata.n_fields,
+        pix_channels=dataset["train"].metadata.n_fields,
         **cfg.ae,
     ).to(device)
 
     autoencoder_loss = WeightedLoss(**cfg.ae.loss).to(device)
 
-    if cfg.fork_from is not None:
+    if cfg.fork.run is not None:
         autoencoder.load_state_dict(stem_state)
         del stem_state
 
@@ -154,7 +141,7 @@ def train(runid: str, cfg: DictConfig):
     if rank == 0:
         run = wandb.init(
             entity=cfg.wandb.entity,
-            project="mpp-ldm-ae",
+            project="mpp-ae",
             id=runid,
             name=runname,
             config=OmegaConf.to_container(cfg),
@@ -173,10 +160,7 @@ def train(runid: str, cfg: DictConfig):
         losses, grads = [], []
 
         for i in range(cfg.train.epoch_size // cfg.train.batch_size):
-            batch = next(train_loader)
-
-            x = batch["input_fields"]
-            x = x.to(device, non_blocking=True)
+            x, _ = get_well_inputs(next(train_loader), device=device)
             x = preprocess(x)
             x = rearrange(x, "B 1 H W C -> B C H W")
 
@@ -235,10 +219,7 @@ def train(runid: str, cfg: DictConfig):
 
         with torch.no_grad():
             for _ in range(cfg.train.epoch_size // cfg.train.batch_size):
-                batch = next(valid_loader)
-
-                x = batch["input_fields"]
-                x = x.to(device, non_blocking=True)
+                x, _ = get_well_inputs(next(valid_loader), device=device)
                 x = preprocess(x)
                 x = rearrange(x, "B 1 H W C -> B C H W")
 
@@ -317,7 +298,7 @@ if __name__ == "__main__":
             time=cfg.compute.time,
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
-            exclude="workergpu156",
+            exclude=cfg.server.exclude,
         ),
         name=f"training ae {runid}",
         backend="slurm",

@@ -10,10 +10,10 @@ train:
   epoch_size: 16384
   batch_size: 64
   accumulation: 1
-  lazy_shuffle: true
 
-fork_from: null
-fork_target: "state"
+fork:
+  run: null
+  target: "state"
 
 compute:
   cpus_per_gpu: 8

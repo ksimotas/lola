@@ -38,7 +38,7 @@ def evaluate(
     from pathlib import Path
     from tqdm import trange
 
-    from lpdm.data import field_preprocess, get_label, get_well_multi_dataset
+    from lpdm.data import field_preprocess, get_well_inputs, get_well_multi_dataset
     from lpdm.diffusion import get_denoiser
     from lpdm.emulation import (
         decode_traj,
@@ -62,9 +62,6 @@ def evaluate(
 
     cfg = OmegaConf.load(runpath / "config.yaml")
 
-    if hasattr(cfg, "ae_from"):
-        cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml")
-
     # Data
     dataset = get_well_multi_dataset(
         path="/mnt/ceph/users/polymathic/the_well/datasets",
@@ -86,30 +83,27 @@ def evaluate(
     if isinstance(index, float):
         index = int(index * len(dataset))
 
-    item = dataset[index]
-
-    x = item["input_fields"]
+    x, label = get_well_inputs(dataset[index], device=device)
     x = x[start :: cfg.trajectory.stride]
-    x = x.to(device)
     x = preprocess(x)
     x = rearrange(x, "L H W C -> C L H W")
 
-    label = get_label(item).to(device)
     labels = label.tolist()
 
     # Autoencoder
-    if hasattr(cfg, "ae_from"):
+    if (runpath / "autoencoder").exists():
+        cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml").ae
         state = torch.load(
             runpath / "autoencoder/state.pth", weights_only=True, map_location=device
         )
 
         autoencoder = get_autoencoder(
             pix_channels=dataset.metadata.n_fields,
-            **cfg.ae.ae,
+            **cfg.ae,
         )
 
         autoencoder.load_state_dict(state)
-        autoencoder.cuda()
+        autoencoder.to(device)
         autoencoder.eval()
 
         del state
@@ -139,19 +133,19 @@ def evaluate(
         denoiser.load_state_dict(
             torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device)
         )
-        denoiser.cuda()
+        denoiser.to(device)
         denoiser.eval()
     elif hasattr(cfg, "surrogate"):
         surrogate = get_surrogate(
             shape=shape,
             label_features=label.numel(),
             **cfg.surrogate,
-        ).to(device)
+        )
 
         surrogate.load_state_dict(
             torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device)
         )
-        surrogate.cuda()
+        surrogate.to(device)
         surrogate.eval()
 
     ## RNG
@@ -250,7 +244,7 @@ def evaluate(
 
                 lines.append(line)
 
-    outdir = Path(f"~/ceph/mpp-ldm/results/{cfg.dataset.name}")
+    outdir = Path(f"{server.storage}/results/{cfg.dataset.name}")
     outdir = outdir.expanduser().resolve()
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -312,6 +306,7 @@ if __name__ == "__main__":
             time=cfg.compute.time,
             partition=cfg.server.partition,
             constraint=cfg.server.constraint,
+            exclude=cfg.server.exclude,
         ),
         name=f"eval {Path(cfg.run).name}",
         backend="slurm",

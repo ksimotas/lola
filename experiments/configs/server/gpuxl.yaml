@@ -1,4 +1,6 @@
 name: "gpuxl"
 partition: "gpuxl"
 constraint: "h100"
+exclude: ""
 datasets: "/mnt/gpuxl/polymathic/the_well/datasets"
+storage: "~/ceph/mpp-ldm"
