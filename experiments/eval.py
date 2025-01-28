@@ -37,7 +37,6 @@ def evaluate(
     from functools import partial
     from omegaconf import OmegaConf
     from pathlib import Path
-    from tqdm import trange
 
     from lpdm.data import field_preprocess, get_well_inputs, get_well_multi_dataset
     from lpdm.diffusion import get_denoiser
@@ -174,26 +173,20 @@ def evaluate(
             label=label,
         )
 
-    ensemble = []
+    z_hat = emulate_rollout(
+        emulate,
+        z,
+        window=cfg.trajectory.length,
+        rollout=z.shape[1],
+        context=(context - 1) // cfg.trajectory.stride + 1,
+        overlap=overlap,
+        batch=samples,
+    )
 
-    for _ in trange(samples, ncols=88, ascii=True):
-        z_hat = emulate_rollout(
-            emulate,
-            z,
-            window=cfg.trajectory.length,
-            rollout=z.shape[1],
-            context=(context - 1) // cfg.trajectory.stride + 1,
-            overlap=overlap,
-        )
+    with torch.no_grad():
+        x_hat = decode_traj(autoencoder, z_hat, batched=True)
 
-        with torch.no_grad():
-            x_hat = decode_traj(autoencoder, z_hat)
-
-        ensemble.append(x_hat)
-
-    x_hat = torch.stack(ensemble)
-
-    del z_hat, ensemble
+    del z_hat
 
     # Evaluation
     lines = []

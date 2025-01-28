@@ -12,43 +12,52 @@ from .nn.autoencoder import AutoEncoder
 from .surrogate import MaskedSurrogate
 
 
-def encode_traj(autoencoder: AutoEncoder, x: Tensor) -> Tensor:
-    x = rearrange(x, "C L ... -> L C ...")
-    z = autoencoder.encode(x)
-    z = rearrange(z, "L C ... -> C L ...")
+def encode_traj(autoencoder: AutoEncoder, x: Tensor, batched: bool = False) -> Tensor:
+    if batched:
+        B, *_ = x.shape
+        x = rearrange(x, "B C L ... -> (B L) C ...")
+        z = autoencoder.encode(x)
+        z = rearrange(z, "(B L) C ... -> B C L ...", B=B)
+    else:
+        x = rearrange(x, "C L ... -> L C ...")
+        z = autoencoder.encode(x)
+        z = rearrange(z, "L C ... -> C L ...")
 
     return z
 
 
-def decode_traj(autoencoder: AutoEncoder, z: Tensor) -> Tensor:
-    z = rearrange(z, "C L ... -> L C ...")
-    x = autoencoder.decode(z)
-    x = rearrange(x, "L C ... -> C L ...")
+def decode_traj(autoencoder: AutoEncoder, z: Tensor, batched: bool = False) -> Tensor:
+    if batched:
+        B, *_ = z.shape
+        z = rearrange(z, "B C L ... -> (B L) C ...")
+        x = autoencoder.decode(z)
+        x = rearrange(x, "(B L) C ... -> B C L ...", B=B)
+    else:
+        z = rearrange(z, "C L ... -> L C ...")
+        x = autoencoder.decode(z)
+        x = rearrange(x, "L C ... -> C L ...")
 
     return x
 
 
 def emulate_surrogate(
     surrogate: MaskedSurrogate,
-    mask: BoolTensor,
-    x_obs: Tensor,
+    mask: BoolTensor,  # (B, C, L, H, W)
+    x_obs: Tensor,  # (B, ...)
     label: Optional[Tensor] = None,
 ) -> Tensor:
-    mask = mask.unsqueeze(dim=0)
-
     y = torch.zeros(mask.shape, dtype=x_obs.dtype, device=x_obs.device)
     y[mask] = x_obs.flatten()
 
     x_hat = surrogate(y, mask=mask, label=label)
-    x_hat = x_hat.squeeze(dim=0)
 
     return x_hat
 
 
 def emulate_diffusion(
     denoiser: GaussianDenoiser,
-    mask: BoolTensor,
-    x_obs: Tensor,
+    mask: BoolTensor,  # (B, C, L, H, W)
+    x_obs: Tensor,  # (B, ...)
     label: Optional[Tensor] = None,
     algorithm: str = "lms",
     steps: int = 64,
@@ -59,8 +68,8 @@ def emulate_diffusion(
 
     cond_denoiser = MaskedDenoiser(
         denoiser,
-        y=y.flatten(),
-        mask=mask.flatten(),
+        y=y.flatten(1),
+        mask=mask.flatten(1),
     )
 
     if algorithm == "ddpm":
@@ -74,8 +83,8 @@ def emulate_diffusion(
 
     cond_sampler = cond_sampler.to(x_obs.device)
 
-    x1 = cond_sampler.init((1, mask.numel()))
-    x0 = cond_sampler(x1, label=label, cond=mask.unsqueeze(dim=0))
+    x1 = cond_sampler.init(mask.flatten(1).shape)
+    x0 = cond_sampler(x1, label=label, cond=mask)
     x0 = x0.reshape(mask.shape)
 
     return x0
@@ -84,20 +93,26 @@ def emulate_diffusion(
 @torch.no_grad()
 def emulate_rollout(
     emulate: Callable[[BoolTensor, Tensor], Tensor],
-    x: Tensor,
+    x: Tensor,  # (C, L, H, W)
     window: int,
     rollout: int,
     context: int = 1,
     overlap: int = 1,
-) -> Tensor:
+    batch: Optional[int] = None,
+) -> Tensor:  # (B, C, L, H, W)
     assert context > 0
     assert overlap > 0
     assert window > context and window > overlap
 
-    x_obs = x[:, :context]
+    if batch is None:
+        x = x.expand(1, *x.shape)
+    else:
+        x = x.expand(batch, *x.shape)
 
-    mask = torch.zeros_like(x[:, :window], dtype=bool)
-    mask[:, :context] = True
+    x_obs = x[:, :, :context]
+
+    mask = torch.zeros_like(x[:, :, :window], dtype=bool)
+    mask[:, :, :context] = True
 
     trajectory = []
 
@@ -105,18 +120,21 @@ def emulate_rollout(
         x_hat = emulate(mask, x_obs)
 
         if trajectory:
-            trajectory.extend(x_hat[:, overlap:].unbind(dim=1))
+            trajectory.extend(x_hat[:, :, overlap:].unbind(dim=2))
         else:
-            trajectory.extend(x_hat.unbind(dim=1))
+            trajectory.extend(x_hat.unbind(dim=2))
 
-        x_obs = x_hat[:, -overlap:]
+        x_obs = x_hat[:, :, -overlap:]
 
         mask = torch.zeros_like(mask)
-        mask[:, :overlap] = True
+        mask[:, :, :overlap] = True
 
-    trajectory = trajectory[:rollout]
+    x_hat = torch.stack(trajectory[:rollout], dim=2)
 
-    return torch.stack(trajectory, dim=1)
+    if batch is None:
+        return x_hat.squeeze(0)
+    else:
+        return x_hat
 
 
 def random_context_mask(
