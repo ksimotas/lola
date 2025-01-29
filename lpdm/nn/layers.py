@@ -57,7 +57,10 @@ def ConvNd(
         for i in range(out_channels):
             eye[(i, i % in_channels, *kernel_center)] = 1
 
+        conv.weight.data.mul_(1e-2)
         conv.weight.data.add_(eye)
+
+        conv.bias.data.mul_(1e-2)
 
     return conv
 

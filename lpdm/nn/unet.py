@@ -85,6 +85,7 @@ class UNetBlock(nn.Module):
         )
 
         self.ada_zero[-2].weight.data.mul_(1e-2)
+        self.ada_zero[-2].bias.data.mul_(1e-2)
 
         # Block
         self.block = nn.Sequential(
