@@ -35,8 +35,8 @@ class MaskedSurrogate(nn.Module):
     def forward(
         self,
         x: Tensor,
+        mask: Tensor,
         label: Optional[Tensor] = None,
-        mask: Optional[Tensor] = None,
         **kwargs,
     ) -> Tensor:
         kwargs.setdefault("cond", mask.expand_as(x))
@@ -46,7 +46,7 @@ class MaskedSurrogate(nn.Module):
         else:
             emb = self.label_embedding(label)
 
-        return self.backbone(x, emb, **kwargs)
+        return self.backbone(x * mask, emb, **kwargs)
 
 
 def get_surrogate(
