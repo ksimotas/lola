@@ -460,7 +460,7 @@ def get_autoencoder(
     # Ignore
     name: str = None,
     loss: DictConfig = None,
-    # Others
+    # Passthrough
     **kwargs,
 ) -> AutoEncoder:
     r"""Instantiates an auto-encoder."""

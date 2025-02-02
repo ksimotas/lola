@@ -57,23 +57,12 @@ def get_surrogate(
     hid_channels: Union[int, Sequence[int]],
     hid_blocks: Union[int, Sequence[int]],
     attention_heads: Union[int, Dict[int, int]],
-    dropout: Optional[float] = None,
-    checkpointing: bool = False,
-    identity_init: bool = True,
-    # ViT
-    qk_norm: bool = True,
-    rope: bool = True,
-    patch_size: Union[int, Sequence[int]] = 4,
-    window_size: Optional[Sequence[int]] = None,
-    # UNet
-    kernel_size: Union[int, Sequence[int]] = 3,
-    stride: Union[int, Sequence[int]] = 2,
-    norm: str = "layer",
-    periodic: bool = False,
-    # Label
+    # Cond
     label_features: int = 0,
     # Ignore
     name: str = None,
+    # Passthrough
+    **kwargs,
 ) -> nn.Module:
     r"""Instantiates a surrogate."""
 
@@ -88,13 +77,8 @@ def get_surrogate(
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
             attention_heads=attention_heads,
-            qk_norm=qk_norm,
-            rope=rope,
             spatial=len(shape) - 1,
-            patch_size=patch_size,
-            window_size=window_size,
-            dropout=dropout,
-            checkpointing=checkpointing,
+            **kwargs,
         )
     elif arch == "unet":
         backbone = UNet(
@@ -104,15 +88,9 @@ def get_surrogate(
             mod_features=emb_features,
             hid_channels=hid_channels,
             hid_blocks=hid_blocks,
-            kernel_size=kernel_size,
-            stride=stride,
-            norm=norm,
             attention_heads=attention_heads,
             spatial=len(shape) - 1,
-            periodic=periodic,
-            dropout=dropout,
-            checkpointing=checkpointing,
-            identity_init=identity_init,
+            **kwargs,
         )
     else:
         raise NotImplementedError()
