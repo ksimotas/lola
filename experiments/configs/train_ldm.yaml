@@ -3,6 +3,7 @@ defaults:
   - denoiser: vit_large
   - denoiser/loss: uniform
   - denoiser/schedule: log_logit
+  - denoiser/precondition: elucidated
   - optim: psgd
   - server: rusty
 

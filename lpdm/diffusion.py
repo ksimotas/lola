@@ -112,7 +112,34 @@ class LogLogitSchedule(Schedule):
         return self.alpha(t).unsqueeze(-1), self.sigma(t).unsqueeze(-1)
 
 
-class PreconditionedDenoiser(GaussianDenoiser):
+class SimpleDenoiser(GaussianDenoiser):
+    r"""Creates a simple Gaussian denoiser.
+
+    Arguments:
+        backbone: A noise conditional network.
+        schedule: A noise schedule.
+    """
+
+    def __init__(self, backbone: nn.Module, schedule: Schedule):
+        super().__init__()
+
+        self.backbone = backbone
+        self.schedule = schedule
+
+    def forward(self, x_t: Tensor, t: Tensor, **kwargs) -> Gaussian:
+        alpha_t, sigma_t = self.schedule(t)
+
+        c_in = torch.rsqrt(alpha_t**2 + sigma_t**2)
+        c_noise = 1e1 * torch.log(sigma_t / alpha_t)
+        c_noise = c_noise.squeeze(dim=-1)
+
+        mean = self.backbone(c_in * x_t, c_noise, **kwargs)
+        var = sigma_t**2 / (alpha_t**2 + sigma_t**2)
+
+        return Gaussian(mean=mean, var=var)
+
+
+class ElucidatedDenoiser(GaussianDenoiser):
     r"""Creates a Gaussian denoiser with EDM-style preconditioning.
 
     Arguments:
@@ -129,7 +156,7 @@ class PreconditionedDenoiser(GaussianDenoiser):
     def forward(self, x_t: Tensor, t: Tensor, **kwargs) -> Gaussian:
         alpha_t, sigma_t = self.schedule(t)
 
-        c_in = 1 / torch.sqrt(alpha_t**2 + sigma_t**2)
+        c_in = torch.rsqrt(alpha_t**2 + sigma_t**2)
         c_out = sigma_t / torch.sqrt(alpha_t**2 + sigma_t**2)
         c_skip = alpha_t / (alpha_t**2 + sigma_t**2)
         c_noise = 1e1 * torch.log(sigma_t / alpha_t)
@@ -182,7 +209,12 @@ class MaskedDenoiser(GaussianDenoiser):
 class DenoiserLoss(nn.Module):
     r"""Creates a loss module for a Gaussian denoiser."""
 
-    def __init__(self, distribution: str = "uniform", a: float = 0.0, b: float = 1.0):
+    def __init__(
+        self,
+        distribution: str = "uniform",
+        a: float = 0.0,
+        b: float = 1.0,
+    ):
         super().__init__()
 
         self.distribution = distribution
@@ -273,7 +305,8 @@ def get_denoiser(
     cond_channels: int = 0,
     # Denoiser
     masked: bool = False,
-    schedule: DictConfig = None,
+    schedule: Optional[DictConfig] = None,
+    precondition: Optional[DictConfig] = None,
     # ViT
     qk_norm: bool = True,
     rope: bool = True,
@@ -363,6 +396,11 @@ def get_denoiser(
     elif schedule.name == "log_logit":
         schedule = LogLogitSchedule(sigma_min=schedule.sigma_min, sigma_max=schedule.sigma_max)
 
-    denoiser = PreconditionedDenoiser(backbone, schedule)
+    if precondition is None:
+        denoiser = ElucidatedDenoiser(backbone, schedule)
+    elif precondition.name == "simple":
+        denoiser = SimpleDenoiser(backbone, schedule)
+    elif precondition.name == "elucidated":
+        denoiser = ElucidatedDenoiser(backbone, schedule)
 
     return denoiser
