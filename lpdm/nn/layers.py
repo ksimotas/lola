@@ -65,6 +65,20 @@ def ConvNd(
     return conv
 
 
+class ReLU2(nn.Module):
+    r"""Creates a ReLU² activation layer.
+
+    .. math:: y = \max(x, 0)^2
+
+    References:
+        | Primer: Searching for Efficient Transformers for Language Modeling (So et al., 2021)
+        | https://arxiv.org/abs/2109.08668
+    """
+
+    def forward(self, x: Tensor) -> Tensor:
+        return torch.nn.functional.relu(x).square()
+
+
 class LayerNorm(nn.Module):
     r"""Creates a layer that standardizes features along a dimension.
 

@@ -393,7 +393,12 @@ def get_denoiser(
     else:
         raise NotImplementedError()
 
-    time_embedding = SineEncoding(emb_features)
+    time_embedding = nn.Sequential(
+        SineEncoding(emb_features),
+        nn.Linear(emb_features, emb_features),
+        nn.SiLU(),
+        nn.Linear(emb_features, emb_features),
+    )
 
     if label_features > 0:
         label_embedding = nn.Sequential(

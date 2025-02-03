@@ -14,7 +14,6 @@ __all__ = [
 ]
 
 import functools
-import itertools
 import math
 import torch
 import torch.nn as nn
@@ -25,6 +24,7 @@ from torch.utils.checkpoint import checkpoint
 from typing import Hashable, Optional, Sequence, Tuple, Union
 
 from .attention import MultiheadSelfAttention, xfa
+from .embedding import SineEncoding
 
 
 class ViTBlock(nn.Module):
@@ -33,6 +33,7 @@ class ViTBlock(nn.Module):
     Arguments:
         channels: The number of channels :math:`C`.
         mod_features: The number of modulating features :math:`D`.
+        mlp_factor: The channel factor in the MLP.
         spatial: The number of spatial dimensinons :math:`N`.
         rope: Whether to use rotary positional embedding (RoPE) or not.
         dropout: The dropout rate in :math:`[0, 1]`.
@@ -44,6 +45,7 @@ class ViTBlock(nn.Module):
         self,
         channels: int,
         mod_features: int,
+        mlp_factor: int = 4,
         spatial: int = 2,
         rope: bool = True,
         dropout: Optional[float] = None,
@@ -59,8 +61,8 @@ class ViTBlock(nn.Module):
         self.ada_zero = nn.Sequential(
             nn.Linear(mod_features, channels),
             nn.SiLU(),
-            nn.Linear(channels, 6 * channels),
-            Rearrange("... (n C) -> n ... 1 C", n=6),
+            nn.Linear(channels, 4 * channels),
+            Rearrange("... (n C) -> n ... 1 C", n=4),
         )
 
         self.ada_zero[-2].weight.data.mul_(1e-2)
@@ -69,7 +71,7 @@ class ViTBlock(nn.Module):
         # MSA
         self.msa = MultiheadSelfAttention(channels, **kwargs)
 
-        ## RoPE
+        ## Rotary PE
         if rope:
             amplitude = 1e2 ** -torch.rand(channels // 2)
             direction = torch.nn.functional.normalize(torch.randn(spatial, channels // 2), dim=0)
@@ -80,44 +82,46 @@ class ViTBlock(nn.Module):
 
         # MLP
         self.mlp = nn.Sequential(
-            nn.Linear(channels, 4 * channels),
+            nn.Linear(channels, mlp_factor * channels),
             nn.SiLU(),
             nn.Identity() if dropout is None else nn.Dropout(dropout),
-            nn.Linear(4 * channels, channels),
+            nn.Linear(mlp_factor * channels, channels),
         )
 
     def _forward(
         self,
         x: Tensor,
         mod: Tensor,
-        indices: Optional[Tensor] = None,
+        coo: Optional[Tensor] = None,
         mask: Optional[Tensor] = None,
+        skip: Optional[Tensor] = None,
     ) -> Tensor:
         r"""
         Arguments:
             x: The input tokens :math:`x`, with shape :math:`(*, L, C)`.
             mod: The modulation vector, with shape :math:`(D)` or :math:`(*, D)`.
-            indices: The postition indices, with shape :math:`(*, L, N)`.
+            coo: The postition coordinates, with shape :math:`(*, L, N)`.
             mask: The attention mask, with shape :math:`(*, L, L)`.
+            skip: A skip connection, with shape :math:`(*, L, C)`.
 
         Returns:
             The ouput tokens :math:`y`, with shape :math:`(*, L, C)`.
         """
 
-        if indices is None or self.theta is None:
+        if self.theta is None:
             theta = None
         else:
-            theta = torch.einsum("...ij,jk", indices, self.theta)
+            theta = torch.einsum("...ij,jk", coo, self.theta)
 
-        a1, b1, c1, a2, b2, c2 = self.ada_zero(mod)
+        a, b, c, d = self.ada_zero(mod)
 
-        y = (a1 + 1) * self.norm(x) + b1
-        y = self.msa(y, theta, mask)
-        y = (x + c1 * y) * torch.rsqrt(1 + c1 * c1)
-
-        y = (a2 + 1) * self.norm(y) + b2
+        y = (a + 1) * self.norm(x) + b
+        y = y + self.msa(y, theta, mask)
         y = self.mlp(y)
-        y = (x + c2 * y) * torch.rsqrt(1 + c2 * c2)
+        y = (x + c * y) * torch.rsqrt(1 + c * c)
+
+        if skip is not None:
+            y = (y + d * skip) * torch.rsqrt(1 + d * d)
 
         return y
 
@@ -125,13 +129,14 @@ class ViTBlock(nn.Module):
         self,
         x: Tensor,
         mod: Tensor,
-        indices: Optional[Tensor] = None,
+        coo: Optional[Tensor] = None,
         mask: Optional[Tensor] = None,
+        skip: Optional[Tensor] = None,
     ) -> Tensor:
         if self.checkpointing:
-            return checkpoint(self._forward, x, mod, indices, mask, use_reentrant=False)
+            return checkpoint(self._forward, x, mod, coo, mask, skip, use_reentrant=False)
         else:
-            return self._forward(x, mod, indices, mask)
+            return self._forward(x, mod, coo, mask, skip)
 
 
 class ViT(nn.Module):
@@ -191,9 +196,9 @@ class ViT(nn.Module):
         self.out_proj = nn.Linear(hid_channels, math.prod(patch_size) * out_channels)
 
         self.positional_embedding = nn.Sequential(
-            nn.Linear(spatial, hid_channels),
-            nn.SiLU(),
-            nn.Linear(hid_channels, hid_channels),
+            SineEncoding(hid_channels),
+            Rearrange("... N C -> ... (N C)"),
+            nn.Linear(spatial * hid_channels, hid_channels),
         )
 
         self.blocks = nn.ModuleList([
@@ -217,48 +222,46 @@ class ViT(nn.Module):
 
     @staticmethod
     @functools.cache
-    def indices_and_mask(
+    def coo_and_mask(
         shape: Sequence[int],
         spatial: int,
         window_size: Sequence[int],
         dtype: torch.dtype,
         device: torch.device,
     ) -> Tuple[Tensor, Tensor]:
-        r"""Returns the token indices and attention mask for a given input shape and window size."""
+        r"""Returns the token coordinates and attention mask for a given input shape and window size."""
 
         assert isinstance(shape, Hashable)
         assert isinstance(window_size, Hashable)
 
-        indices = (torch.arange(size, device=device) for size in shape)
-        indices = torch.cartesian_prod(*indices)
-        indices = torch.reshape(indices, shape=(-1, spatial))
+        coo = (torch.arange(size, device=device) for size in shape)
+        coo = torch.cartesian_prod(*coo)
+        coo = torch.reshape(coo, shape=(-1, spatial))
 
         if window_size is None:
             mask = None
         else:
-            delta = torch.abs(indices[:, None] - indices[None, :])
+            delta = torch.abs(coo[:, None] - coo[None, :])
             delta = torch.minimum(delta, delta.new_tensor(shape) - delta)
 
-            mask = torch.all(delta <= indices.new_tensor(window_size) // 2, dim=-1)
+            mask = torch.all(delta <= coo.new_tensor(window_size) // 2, dim=-1)
 
             if xfa._has_cpp_library:
                 mask = xfa.SparseCS(mask, device=mask.device)._mat
 
-        return indices.to(dtype=dtype), mask
+        return coo.to(dtype=dtype), mask
 
     def forward(
         self,
         x: Tensor,
         mod: Tensor,
         cond: Optional[Tensor] = None,
-        early_out: Optional[int] = None,
     ) -> Tensor:
         r"""
         Arguments:
             x: The input tensor, with shape :math:`(B, C_i, L_1, ..., L_N)`.
             mod: The modulation vector, with shape :math:`(D)` or :math:`(B, D)`.
             cond: The condition tensor, with :math:`(B, C_c, L_1, ..., L_N)`.
-            early_out: The number of blocks after which the output is returned.
 
         Returns:
             The output tensor, with shape :math:`(B, C_o, L_1, ..., L_N)`.
@@ -271,7 +274,7 @@ class ViT(nn.Module):
         x = self.in_proj(x)
 
         shape = x.shape[-self.spatial - 1 : -1]
-        indices, mask = self.indices_and_mask(
+        coo, mask = self.coo_and_mask(
             shape,
             spatial=self.spatial,
             window_size=self.window_size,
@@ -279,11 +282,11 @@ class ViT(nn.Module):
             device=x.device,
         )
 
-        x = torch.flatten(x, -self.spatial - 1, -2)
-        x = x + self.positional_embedding(indices / indices.new_tensor(shape))
+        x = skip = torch.flatten(x, -self.spatial - 1, -2)
+        x = x + self.positional_embedding(coo)
 
-        for block in itertools.islice(self.blocks, early_out):
-            x = block(x, mod, indices=indices, mask=mask)
+        for block in self.blocks:
+            x = block(x, mod, coo=coo, mask=mask, skip=skip)
 
         x = torch.unflatten(x, sizes=shape, dim=-2)
 

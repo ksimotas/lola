@@ -21,11 +21,6 @@ from typing import Dict, Optional, Sequence, Union
 from .layers import ConvNd, LayerNorm, SelfAttentionNd
 
 
-class Residual(nn.Sequential):
-    def forward(self, x: Tensor) -> Tensor:
-        return x + super().forward(x)
-
-
 class UNetBlock(nn.Module):
     r"""Creates a modulated U-Net block module.
 
@@ -45,7 +40,7 @@ class UNetBlock(nn.Module):
         self,
         channels: int,
         mod_features: int,
-        norm: str = "group",
+        norm: str = "layer",
         groups: int = 16,
         attention_heads: Optional[int] = None,
         spatial: int = 2,
@@ -59,21 +54,19 @@ class UNetBlock(nn.Module):
 
         # Attention
         if attention_heads is None:
-            self.attn = nn.Identity()
+            self.attn = None
         else:
-            self.attn = Residual(
-                SelfAttentionNd(channels, heads=attention_heads),
-            )
+            self.attn = SelfAttentionNd(channels, heads=attention_heads)
 
         # Ada-Norm Zero
-        if norm == "group":
+        if norm == "layer":
+            self.norm = LayerNorm(dim=-spatial - 1)
+        elif norm == "group":
             self.norm = nn.GroupNorm(
                 num_groups=min(groups, channels),
                 num_channels=channels,
                 affine=False,
             )
-        elif norm == "layer":
-            self.norm = LayerNorm(dim=-spatial - 1)
         else:
             raise NotImplementedError()
 
@@ -107,8 +100,8 @@ class UNetBlock(nn.Module):
 
         a, b, c = self.ada_zero(mod)
 
-        y = self.attn(x)
-        y = (a + 1) * self.norm(y) + b
+        y = (a + 1) * self.norm(x) + b
+        y = y if self.attn is None else y + self.attn(y)
         y = self.block(y)
         y = (x + c * y) * torch.rsqrt(1 + c * c)
 
@@ -156,7 +149,7 @@ class UNet(nn.Module):
         hid_blocks: Sequence[int] = (3, 3, 3),
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
-        norm: str = "group",
+        norm: str = "layer",
         attention_heads: Dict[int, int] = {},  # noqa: B006
         spatial: int = 2,
         periodic: bool = False,
