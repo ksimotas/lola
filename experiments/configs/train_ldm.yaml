@@ -11,14 +11,14 @@ ae_run: ???
 
 trajectory:
   length: 5
-  stride: 1
+  stride: 4
   context:
     lmbda: 1.0
     rho: 0.66
     atleast: 1
 
 train:
-  epochs: 1024
+  epochs: 4096
   epoch_size: 16384
   batch_size: 256
   accumulation: 1

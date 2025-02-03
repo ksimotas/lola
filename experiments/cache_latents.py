@@ -5,20 +5,17 @@ import dawgz
 import glob
 import os
 
+from omegaconf import DictConfig
 from pathlib import Path
-from typing import Sequence
 
 from lpdm.hydra import compose
 
 
 def cache_latent(
-    run: str,
+    cfg: DictConfig,
     physics: str,
     split: str,
     file: str,
-    augment: Sequence[str] = (),
-    repeat: int = 1,
-    datasets: str = "/mnt/ceph/users/polymathic/the_well/datasets",
 ):
     import h5py
     import numpy as np
@@ -26,7 +23,7 @@ def cache_latent(
 
     from einops import rearrange
     from functools import partial
-    from omegaconf import OmegaConf
+    from omegaconf import OmegaConf, open_dict
     from pathlib import Path
     from tqdm import trange
 
@@ -36,10 +33,11 @@ def cache_latent(
     device = torch.device("cuda")
 
     # Config
-    runpath = Path(run)
+    runpath = Path(cfg.run)
     runpath = runpath.expanduser().resolve(strict=True)
 
-    cfg = OmegaConf.load(runpath / "config.yaml")
+    with open_dict(cfg):
+        cfg.ae = OmegaConf.load(runpath / "config.yaml").ae
 
     cache_path = runpath / "cache" / physics / split / file
 
@@ -47,12 +45,12 @@ def cache_latent(
 
     # Data
     dataset = get_well_dataset(
-        path=datasets,
+        path=cfg.server.datasets,
         physics=physics,
         split=split,
         steps=-1,
         include_filters=[file],
-        augment=augment,
+        augment=cfg.dataset.augment,
     )
 
     preprocess = partial(
@@ -86,7 +84,7 @@ def cache_latent(
         for i in trange(len(dataset), ncols=88, ascii=True):
             visited = []
 
-            for j in range(repeat):
+            for j in range(cfg.repeat):
                 while True:
                     x, label = get_well_inputs(dataset[i], device=device)
                     x = preprocess(x)
@@ -106,19 +104,19 @@ def cache_latent(
                 if "state" not in f:
                     f.create_dataset(
                         "state",
-                        shape=(len(dataset) * repeat, *z.shape),
+                        shape=(len(dataset) * cfg.repeat, *z.shape),
                         dtype=np.float32,
                     )
 
                 if "label" not in f:
                     f.create_dataset(
                         "label",
-                        shape=(len(dataset) * repeat, *label.shape),
+                        shape=(len(dataset) * cfg.repeat, *label.shape),
                         dtype=np.float32,
                     )
 
-                f["state"][i * repeat + j] = z.numpy(force=True)
-                f["label"][i * repeat + j] = label.numpy(force=True)
+                f["state"][i * cfg.repeat + j] = z.numpy(force=True)
+                f["label"][i * cfg.repeat + j] = label.numpy(force=True)
 
 
 if __name__ == "__main__":
@@ -148,13 +146,10 @@ if __name__ == "__main__":
     # Job(s)
     def launch(i: int):
         cache_latent(
-            run=cfg.run,
+            cfg=cfg,
             physics=array[i][0],
             split=array[i][1],
             file=array[i][2],
-            augment=cfg.dataset.augment,
-            repeat=cfg.repeat,
-            datasets=cfg.server.datasets,
         )
 
     dawgz.schedule(

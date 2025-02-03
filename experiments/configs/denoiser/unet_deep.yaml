@@ -1,4 +1,4 @@
-name: "unet_deep_medium"
+name: "unet_deep"
 arch: "unet"
 emb_features: 256
 hid_channels: [64, 128, 256, 512, 768, 1024]

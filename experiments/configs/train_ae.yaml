@@ -6,7 +6,7 @@ defaults:
   - server: rusty
 
 train:
-  epochs: 1024
+  epochs: 4096
   epoch_size: 16384
   batch_size: 256
   accumulation: 1

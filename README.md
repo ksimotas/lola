@@ -30,28 +30,26 @@ cd experiments
 ### Auto-encoders
 
 ```
-python train_ae.py dataset=euler_all ae.lat_channels=32
-python train_ae.py dataset=euler_all ae.lat_channels=64
-python train_ae.py dataset=euler_all ae.lat_channels=128
-python train_ae.py dataset=rayleigh_benard ae.lat_channels=32
-python train_ae.py dataset=rayleigh_benard ae.lat_channels=64
-python train_ae.py dataset=rayleigh_benard ae.lat_channels=128
+python train_ae.py dataset=euler_all optim.learning_rate=1e-5 ae.lat_channels=32
+python train_ae.py dataset=euler_all optim.learning_rate=1e-5 ae.lat_channels=64
+python train_ae.py dataset=euler_all optim.learning_rate=1e-5 ae.lat_channels=128
+python train_ae.py dataset=rayleigh_benard optim.learning_rate=1e-5 ae.lat_channels=32
+python train_ae.py dataset=rayleigh_benard optim.learning_rate=1e-5 ae.lat_channels=64
+python train_ae.py dataset=rayleigh_benard optim.learning_rate=1e-5 ae.lat_channels=128
 ```
 
 ```
-python cache_latents.py run=??? dataset=euler_all split=train repeat=4
-python cache_latents.py run=??? dataset=euler_all dataset.augment=[] split=valid
-python cache_latents.py run=??? dataset=rayleigh_benard split=train repeat=4
-python cache_latents.py run=??? dataset=rayleigh_benard dataset.augment=["log_scalars"] split=valid
+python cache_latents.py dataset=euler_all split=train repeat=4 run=???
+python cache_latents.py dataset=euler_all split=valid run=???
+python cache_latents.py dataset=rayleigh_benard split=train repeat=4 run=???
+python cache_latents.py dataset=rayleigh_benard split=valid run=???
 ```
 
-### Pixel-space DMs and SMs
+### Pixel-space SMs
 
 ```
-python train_dm.py dataset=euler_all compute.nodes=2
-python train_sm.py dataset=euler_all compute.nodes=2
-python train_dm.py dataset=rayleigh_benard
-python train_sm.py dataset=rayleigh_benard
+python train_sm.py dataset=euler_all optim.learning_rate=1e-5 compute.nodes=4
+python train_sm.py dataset=rayleigh_benard optim.learning_rate=1e-5
 ```
 
 ### Latent-space DMs and SMs
