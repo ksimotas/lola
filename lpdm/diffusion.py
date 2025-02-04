@@ -11,7 +11,7 @@ import torch.nn as nn
 
 from azula.denoise import Gaussian, GaussianDenoiser
 from azula.nn.utils import FlattenWrapper
-from azula.noise import Schedule, VESchedule
+from azula.noise import Schedule
 from omegaconf import DictConfig
 from torch import BoolTensor, Tensor
 from torch.distributions import Beta, Distribution, Kumaraswamy, Uniform
@@ -59,7 +59,7 @@ class LogLinearSchedule(Schedule):
         sigma_max: The final noise scale :math:`\sigma_\max \in \mathbb{R}_+`.
     """
 
-    def __init__(self, sigma_min: float = 1e-3, sigma_max: float = 1e4):
+    def __init__(self, sigma_min: float = 1e-3, sigma_max: float = 1e3):
         super().__init__()
 
         self.log_sigma_min = math.log(sigma_min)
@@ -80,7 +80,13 @@ class LogLogitSchedule(Schedule):
 
     .. math::
         \alpha_t & = 1 \\
-        \sigma_t & = \sqrt{\sigma_\min \sigma_\max} \exp(\rho \logit t)
+        \sigma_t & = \exp a \logit((t_\max - t_\min) t + t_\min)) + b
+
+    where
+
+    .. math::
+        t_\min & = \frac{\sigma_\min}{1 + \sigma_\min} \\
+        t_\max & = \frac{\sigma_\max}{1 + \sigma_\max}
 
     See also:
         :func:`torch.logit`
@@ -88,24 +94,30 @@ class LogLogitSchedule(Schedule):
     Arguments:
         sigma_min: The initial noise scale :math:`\sigma_\min \in \mathbb{R}_+`.
         sigma_max: The final noise scale :math:`\sigma_\max \in \mathbb{R}_+`.
-        spread: The spread factor :math:`\rho \in \mathbb{R}_+`.
+        scale: The scale factor :math:`a \in \mathbb{R}_+`.
+        shift: The shift term :math:`b \in \mathbb{R}`.
     """
 
-    def __init__(self, sigma_min: float = 1e-3, sigma_max: float = 1e4, spread: float = 2.0):
+    def __init__(
+        self,
+        sigma_min: float = 1e-3,
+        sigma_max: float = 1e3,
+        scale: float = 1.0,
+        shift: float = 0.0,
+    ):
         super().__init__()
 
-        self.eps = math.sqrt(sigma_min / sigma_max) ** (1 / spread)
-        self.log_sigma_min = math.log(sigma_min)
-        self.log_sigma_max = math.log(sigma_max)
-        self.log_sigma_med = math.log(sigma_min * sigma_max) / 2
-        self.spread = spread
+        self.t_min = sigma_min / (1 + sigma_min)
+        self.t_max = sigma_max / (1 + sigma_max)
+        self.scale = scale
+        self.shift = shift
 
     def alpha(self, t: Tensor) -> Tensor:
         return torch.ones_like(t)
 
     def sigma(self, t: Tensor) -> Tensor:
         return torch.exp(
-            self.spread * torch.logit(t * (1 - 2 * self.eps) + self.eps) + self.log_sigma_med
+            self.scale * torch.logit(t * (self.t_max - self.t_min) + self.t_min) + self.shift
         )
 
     def forward(self, t: Tensor) -> Tuple[Tensor, Tensor]:
@@ -424,12 +436,18 @@ def get_denoiser(
         shape=shape,
     )
 
-    if schedule is None:
-        schedule = VESchedule(sigma_min=1e-3, sigma_max=1e4)
-    elif schedule.name == "log_linear":
-        schedule = LogLinearSchedule(sigma_min=schedule.sigma_min, sigma_max=schedule.sigma_max)
+    if schedule.name == "log_linear":
+        schedule = LogLinearSchedule(
+            sigma_min=schedule.sigma_min,
+            sigma_max=schedule.sigma_max,
+        )
     elif schedule.name == "log_logit":
-        schedule = LogLogitSchedule(sigma_min=schedule.sigma_min, sigma_max=schedule.sigma_max)
+        schedule = LogLogitSchedule(
+            sigma_min=schedule.sigma_min,
+            sigma_max=schedule.sigma_max,
+            scale=getattr(schedule, "scale", 1.0),
+            shift=getattr(schedule, "shift", 0.0),
+        )
 
     if precondition is None:
         denoiser = ElucidatedDenoiser(backbone, schedule)
