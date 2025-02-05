@@ -29,6 +29,7 @@ def train(runid: str, cfg: DictConfig):
         get_well_multi_dataset,
     )
     from lpdm.emulation import random_context_mask
+    from lpdm.nn.utils import load_state_dict
     from lpdm.optim import get_optimizer, safe_gd_step
     from lpdm.surrogate import get_surrogate
     from lpdm.utils import randseed
@@ -131,7 +132,7 @@ def train(runid: str, cfg: DictConfig):
     ).to(device)
 
     if cfg.fork.run is not None:
-        surrogate.load_state_dict(stem_state, strict=cfg.fork.strict)
+        load_state_dict(surrogate, stem_state, strict=cfg.fork.strict)
         del stem_state
 
     surrogate = DistributedDataParallel(

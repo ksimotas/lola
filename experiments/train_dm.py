@@ -30,6 +30,7 @@ def train(runid: str, cfg: DictConfig):
     )
     from lpdm.diffusion import DenoiserLoss, get_denoiser
     from lpdm.emulation import random_context_mask
+    from lpdm.nn.utils import load_state_dict
     from lpdm.optim import ExponentialMovingAverage, get_optimizer, safe_gd_step
     from lpdm.utils import randseed
 
@@ -134,7 +135,7 @@ def train(runid: str, cfg: DictConfig):
     denoiser_loss = DenoiserLoss(**cfg.denoiser.loss).to(device)
 
     if cfg.fork.run is not None:
-        denoiser.load_state_dict(stem_state, strict=cfg.fork.strict)
+        load_state_dict(denoiser, stem_state, strict=cfg.fork.strict)
         del stem_state
 
     denoiser = DistributedDataParallel(

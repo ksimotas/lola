@@ -26,6 +26,7 @@ def train(runid: str, cfg: DictConfig):
     from lpdm.data import field_preprocess, get_dataloader, get_well_inputs, get_well_multi_dataset
     from lpdm.loss import WeightedLoss
     from lpdm.nn.autoencoder import get_autoencoder
+    from lpdm.nn.utils import load_state_dict
     from lpdm.optim import get_optimizer, safe_gd_step
     from lpdm.utils import randseed
 
@@ -123,7 +124,7 @@ def train(runid: str, cfg: DictConfig):
     autoencoder_loss = WeightedLoss(**cfg.ae.loss).to(device)
 
     if cfg.fork.run is not None:
-        autoencoder.load_state_dict(stem_state, strict=cfg.fork.strict)
+        load_state_dict(autoencoder, stem_state, strict=cfg.fork.strict)
         del stem_state
 
     autoencoder = DistributedDataParallel(
