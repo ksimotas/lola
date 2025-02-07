@@ -7,6 +7,8 @@ __all__ = [
     "SelfAttentionNd",
     "Patchify",
     "Unpatchify",
+    "Shrink",
+    "Dilate",
 ]
 
 import torch
@@ -235,3 +237,30 @@ class Unpatchify(nn.Module):
             return rearrange(x, "... (C l h w) L H W -> ... C (L l) (H h) (W w)", l=l, h=h, w=w)
         else:
             raise NotImplementedError()
+
+
+class Shrink(nn.Module):
+    def __init__(self, stride: Sequence[int]):
+        super().__init__()
+
+        self.stride = stride
+
+    def forward(self, x: Tensor) -> Tensor:
+        slices = [slice(None, None, stride) for stride in self.stride]
+
+        return x[..., *slices]
+
+
+class Dilate(nn.Module):
+    def __init__(self, stride: Sequence[int]):
+        super().__init__()
+
+        self.stride = stride
+
+    def forward(self, x: Tensor) -> Tensor:
+        kernel = torch.zeros(self.stride, dtype=x.dtype, device=x.device)
+        kernel = kernel.flatten()
+        kernel[0] = 1.0
+        kernel = kernel.reshape(self.stride)
+
+        return torch.kron(x.contiguous(), kernel)
