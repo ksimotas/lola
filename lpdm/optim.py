@@ -67,6 +67,7 @@ def get_optimizer(
     warmup: Optional[int] = None,
     # SOAP & PSGD
     precondition_frequency: int = 16,
+    precondition_frequency_decay: float = 0.999,
     precondition_dim: int = 4096,
     # Ignored
     name: str = None,
@@ -122,6 +123,7 @@ def get_optimizer(
             preconditioner_update_probability=partial(
                 precond_prob_schedule,
                 min_prob=1 / precondition_frequency,
+                decay=precondition_frequency_decay,
             ),
             max_size_triangular=precondition_dim,
         )
