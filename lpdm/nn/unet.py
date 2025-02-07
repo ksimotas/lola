@@ -39,7 +39,7 @@ class UNetBlock(nn.Module):
     def __init__(
         self,
         channels: int,
-        mod_features: int,
+        mod_features: int = 0,
         norm: str = "layer",
         groups: int = 16,
         attention_heads: Optional[int] = None,
@@ -70,15 +70,19 @@ class UNetBlock(nn.Module):
         else:
             raise NotImplementedError()
 
-        self.ada_zero = nn.Sequential(
-            nn.Linear(mod_features, max(mod_features, channels)),
-            nn.SiLU(),
-            nn.Linear(max(mod_features, channels), 3 * channels),
-            Rearrange("... (n C) -> n ... C" + " 1" * spatial, n=3),
-        )
+        if mod_features > 0:
+            self.ada_zero = nn.Sequential(
+                nn.Linear(mod_features, max(mod_features, channels)),
+                nn.SiLU(),
+                nn.Linear(max(mod_features, channels), 3 * channels),
+                Rearrange("... (n C) -> n ... C" + " 1" * spatial, n=3),
+            )
 
-        self.ada_zero[-2].weight.data.mul_(1e-2)
-        self.ada_zero[-2].bias.data.mul_(1e-2)
+            self.ada_zero[-2].weight.data.mul_(1e-2)
+            self.ada_zero[-2].bias.data.mul_(1e-2)
+        else:
+            self.ada_zero = nn.Parameter(torch.randn(3, channels))
+            self.ada_zero.data.mul_(1e-2)
 
         # Block
         self.block = nn.Sequential(
@@ -88,7 +92,7 @@ class UNetBlock(nn.Module):
             ConvNd(channels, channels, spatial=spatial, **kwargs),
         )
 
-    def _forward(self, x: Tensor, mod: Tensor) -> Tensor:
+    def _forward(self, x: Tensor, mod: Optional[Tensor] = None) -> Tensor:
         r"""
         Arguments:
             x: The input tensor, with shape :math:`(B, C, L_1, ..., L_N)`.
@@ -98,7 +102,10 @@ class UNetBlock(nn.Module):
             The output tensor, with shape :math:`(B, C, L_1, ..., L_N)`.
         """
 
-        a, b, c = self.ada_zero(mod)
+        if torch.is_tensor(self.ada_zero):
+            a, b, c = self.ada_zero
+        else:
+            a, b, c = self.ada_zero(mod)
 
         y = (a + 1) * self.norm(x) + b
         y = y if self.attn is None else y + self.attn(y)
@@ -110,7 +117,7 @@ class UNetBlock(nn.Module):
     def forward(
         self,
         x: Tensor,
-        mod: Tensor,
+        mod: Optional[Tensor] = None,
     ) -> Tensor:
         if self.checkpointing:
             return checkpoint(self._forward, x, mod, use_reentrant=False)
@@ -246,7 +253,12 @@ class UNet(nn.Module):
             self.descent.append(do)
             self.ascent.insert(0, up)
 
-    def forward(self, x: Tensor, mod: Tensor, cond: Optional[Tensor] = None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        mod: Optional[Tensor] = None,
+        cond: Optional[Tensor] = None,
+    ) -> Tensor:
         r"""
         Arguments:
             x: The input tensor, with shape :math:`(B, C_i, L_1, ..., L_N)`.

@@ -44,7 +44,7 @@ class ViTBlock(nn.Module):
     def __init__(
         self,
         channels: int,
-        mod_features: int,
+        mod_features: int = 0,
         mlp_factor: int = 4,
         spatial: int = 2,
         rope: bool = True,
@@ -58,15 +58,20 @@ class ViTBlock(nn.Module):
 
         # Ada-LN Zero
         self.norm = nn.LayerNorm(channels, elementwise_affine=False)
-        self.ada_zero = nn.Sequential(
-            nn.Linear(mod_features, channels),
-            nn.SiLU(),
-            nn.Linear(channels, 4 * channels),
-            Rearrange("... (n C) -> n ... 1 C", n=4),
-        )
 
-        self.ada_zero[-2].weight.data.mul_(1e-2)
-        self.ada_zero[-2].bias.data.mul_(1e-2)
+        if mod_features > 0:
+            self.ada_zero = nn.Sequential(
+                nn.Linear(mod_features, channels),
+                nn.SiLU(),
+                nn.Linear(channels, 4 * channels),
+                Rearrange("... (n C) -> n ... 1 C", n=4),
+            )
+
+            self.ada_zero[-2].weight.data.mul_(1e-2)
+            self.ada_zero[-2].bias.data.mul_(1e-2)
+        else:
+            self.ada_zero = nn.Parameter(torch.randn(4, channels))
+            self.ada_zero.data.mul_(1e-2)
 
         # MSA
         self.msa = MultiheadSelfAttention(channels, **kwargs)
@@ -91,7 +96,7 @@ class ViTBlock(nn.Module):
     def _forward(
         self,
         x: Tensor,
-        mod: Tensor,
+        mod: Optional[Tensor] = None,
         coo: Optional[Tensor] = None,
         mask: Optional[Tensor] = None,
         skip: Optional[Tensor] = None,
@@ -113,7 +118,10 @@ class ViTBlock(nn.Module):
         else:
             theta = torch.einsum("...ij,jk", coo, self.theta)
 
-        a, b, c, d = self.ada_zero(mod)
+        if torch.is_tensor(self.ada_zero):
+            a, b, c, d = self.ada_zero
+        else:
+            a, b, c, d = self.ada_zero(mod)
 
         y = (a + 1) * self.norm(x) + b
         y = y + self.msa(y, theta, mask)
@@ -128,7 +136,7 @@ class ViTBlock(nn.Module):
     def forward(
         self,
         x: Tensor,
-        mod: Tensor,
+        mod: Optional[Tensor] = None,
         coo: Optional[Tensor] = None,
         mask: Optional[Tensor] = None,
         skip: Optional[Tensor] = None,
@@ -254,7 +262,7 @@ class ViT(nn.Module):
     def forward(
         self,
         x: Tensor,
-        mod: Tensor,
+        mod: Optional[Tensor] = None,
         cond: Optional[Tensor] = None,
     ) -> Tensor:
         r"""
