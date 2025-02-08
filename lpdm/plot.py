@@ -52,8 +52,8 @@ def animate_fields(
     artists = []
 
     for i in range(C):
-        vmin = np.nanmin(x[i])
-        vmax = np.nanmax(x[i])
+        vmin = np.quantile(x[i], 0.01) - 1e-2
+        vmax = np.quantile(x[i], 0.99) + 1e-2
 
         if fields:
             axs[0, i].set_title(f"{fields[i]}")
@@ -151,8 +151,8 @@ def draw_fields(
         )
 
     for i in range(C):
-        vmin = np.nanmin(x[i])
-        vmax = np.nanmax(x[i])
+        vmin = np.quantile(x[i], 0.01) - 1e-2
+        vmax = np.quantile(x[i], 0.99) + 1e-2
 
         if fields:
             axs[0, i].set_title(f"{fields[i]}")
@@ -253,13 +253,14 @@ def field2rgb(
         x = x.numpy(force=True)
 
     if vmin is None:
-        vmin = np.min(x)
+        vmin = np.quantile(x, 0.01) - 1e-2
     if vmax is None:
-        vmax = np.max(x)
+        vmax = np.quantile(x, 0.99) + 1e-2
 
     palette = plt.get_cmap(cmap)
 
     x = (x - vmin) / (vmax - vmin)
+    x = np.clip(x, a_min=0.0, a_max=1.0)
     x = palette(x)
     x = 256 * x[..., :3]
     x = x.astype(np.uint8)
