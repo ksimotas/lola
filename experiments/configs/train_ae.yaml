@@ -1,6 +1,6 @@
 defaults:
-  - ae: f32c64_medium
-  - ae/loss: mse
+  - ae: dcae_f32c64_medium
+  - ae/loss: mae
   - dataset: euler_all
   - optim: psgd
   - server: rusty

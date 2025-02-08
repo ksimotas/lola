@@ -8,7 +8,7 @@ __all__ = [
 import torch.nn as nn
 
 from torch import Tensor
-from typing import Dict, Optional, Sequence, Union
+from typing import Optional, Sequence
 
 from .nn.unet import UNet
 from .nn.vit import ViT
@@ -50,15 +50,11 @@ class MaskedSurrogate(nn.Module):
 
 
 def get_surrogate(
-    arch: str,
     shape: Sequence[int],
-    # Common
-    emb_features: int,
-    hid_channels: Union[int, Sequence[int]],
-    hid_blocks: Union[int, Sequence[int]],
-    attention_heads: Union[int, Dict[int, int]],
-    # Cond
     label_features: int = 0,
+    # Arch
+    arch: Optional[str] = None,
+    emb_features: int = 256,
     # Ignore
     name: str = None,
     # Passthrough
@@ -68,15 +64,12 @@ def get_surrogate(
 
     channels, *_ = shape
 
-    if arch == "dit" or arch == "vit":
+    if arch in (None, "dit", "vit"):
         backbone = ViT(
             in_channels=channels,
             out_channels=channels,
             cond_channels=channels,
-            mod_features=emb_features,
-            hid_channels=hid_channels,
-            hid_blocks=hid_blocks,
-            attention_heads=attention_heads,
+            mod_features=emb_features if label_features > 0 else 0,
             spatial=len(shape) - 1,
             **kwargs,
         )
@@ -85,10 +78,7 @@ def get_surrogate(
             in_channels=channels,
             out_channels=channels,
             cond_channels=channels,
-            mod_features=emb_features,
-            hid_channels=hid_channels,
-            hid_blocks=hid_blocks,
-            attention_heads=attention_heads,
+            mod_features=emb_features if label_features > 0 else 0,
             spatial=len(shape) - 1,
             **kwargs,
         )

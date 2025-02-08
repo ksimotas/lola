@@ -9,4 +9,5 @@ __all__ = [
     "unet",
 ]
 
-from . import attention, autoencoder, embedding, layers, unet, vit
+from . import attention, embedding, layers, unet, vit
+from .. import autoencoder

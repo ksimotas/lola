@@ -1,0 +1,14 @@
+name: "vit_f16c${.lat_channels}_large"
+arch: "vit"
+saturation: "softclip2"
+lat_channels: 16
+hid_channels: 1024
+hid_blocks: 8
+mlp_factor: 4
+attention_heads: 8
+qk_norm: true
+rope: true
+patch_size: [16, 16]
+window_size: null
+dropout: 0.05
+checkpointing: false

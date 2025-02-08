@@ -1,4 +1,5 @@
-name: "f32c${.lat_channels}_small"
+name: "dcae_f32c${.lat_channels}_small"
+arch: "dcae"
 saturation: "softclip2"
 lat_channels: 64
 hid_channels: [32, 64, 128, 256, 512, 1024]

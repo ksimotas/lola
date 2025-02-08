@@ -7,8 +7,8 @@ from einops import rearrange
 from torch import BoolTensor, Tensor
 from typing import Callable, Optional
 
+from .autoencoder import AutoEncoder
 from .diffusion import GaussianDenoiser, MaskedDenoiser
-from .nn.autoencoder import AutoEncoder
 from .surrogate import MaskedSurrogate
 
 

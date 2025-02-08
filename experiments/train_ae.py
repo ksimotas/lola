@@ -23,9 +23,8 @@ def train(runid: str, cfg: DictConfig):
     from torch.nn.parallel import DistributedDataParallel
     from tqdm import trange
 
+    from lpdm.autoencoder import AutoEncoderLoss, get_autoencoder
     from lpdm.data import field_preprocess, get_dataloader, get_well_inputs, get_well_multi_dataset
-    from lpdm.loss import WeightedLoss
-    from lpdm.nn.autoencoder import get_autoencoder
     from lpdm.nn.utils import load_state_dict
     from lpdm.optim import get_optimizer, safe_gd_step
     from lpdm.utils import randseed
@@ -121,7 +120,7 @@ def train(runid: str, cfg: DictConfig):
         **cfg.ae,
     ).to(device)
 
-    autoencoder_loss = WeightedLoss(**cfg.ae.loss).to(device)
+    autoencoder_loss = AutoEncoderLoss(**cfg.ae.loss).to(device)
 
     if cfg.fork.run is not None:
         load_state_dict(autoencoder, stem_state, strict=cfg.fork.strict)
@@ -166,8 +165,7 @@ def train(runid: str, cfg: DictConfig):
             x = rearrange(x, "B 1 H W C -> B C H W")
 
             if (i + 1) % cfg.train.accumulation == 0:
-                y, z = autoencoder(x)
-                loss = autoencoder_loss(x, y)
+                loss = autoencoder_loss(autoencoder, x)
                 loss_acc = loss / cfg.train.accumulation
                 loss_acc.backward()
 
@@ -178,8 +176,7 @@ def train(runid: str, cfg: DictConfig):
                 counter["update_steps"] += 1
             else:
                 with autoencoder.no_sync():
-                    y, z = autoencoder(x)
-                    loss = autoencoder_loss(x, y)
+                    loss = autoencoder_loss(autoencoder, x)
                     loss_acc = loss / cfg.train.accumulation
                     loss_acc.backward()
 
@@ -224,8 +221,7 @@ def train(runid: str, cfg: DictConfig):
                 x = preprocess(x)
                 x = rearrange(x, "B 1 H W C -> B C H W")
 
-                y, z = autoencoder(x)
-                loss = autoencoder_loss(x, y)
+                loss = autoencoder_loss(autoencoder, x)
                 losses.append(loss)
 
         losses = torch.stack(losses)

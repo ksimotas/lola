@@ -27,8 +27,8 @@ def cache_latent(
     from pathlib import Path
     from tqdm import trange
 
+    from lpdm.autoencoder import get_autoencoder
     from lpdm.data import field_preprocess, get_well_dataset, get_well_inputs
-    from lpdm.nn.autoencoder import get_autoencoder
 
     device = torch.device("cuda")
 

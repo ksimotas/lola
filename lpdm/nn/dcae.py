@@ -1,21 +1,21 @@
-r"""Auto-encoder building blocks."""
+r"""Deep Compressed Auto-Encoder (DCAE) building blocks.
+
+References:
+    | Deep Compression Autoencoder for Efficient High-Resolution Diffusion Models (Chen et al., 2024)
+    | https://arxiv.org/abs/2410.10733v1
+"""
 
 __all__ = [
-    "ResBlock",
-    "Encoder",
-    "Decoder",
-    "AutoEncoder",
-    "get_autoencoder",
+    "DCEncoder",
+    "DCDecoder",
 ]
 
 import math
-import torch
 import torch.nn as nn
 
-from omegaconf import DictConfig
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
-from typing import Dict, Optional, Sequence, Tuple, Union
+from typing import Dict, Optional, Sequence, Union
 
 from .layers import (
     ConvNd,
@@ -48,7 +48,7 @@ class ResBlock(nn.Module):
     def __init__(
         self,
         channels: int,
-        norm: str = "group",
+        norm: str = "layer",
         groups: int = 16,
         attention_heads: Optional[int] = None,
         spatial: int = 2,
@@ -79,7 +79,9 @@ class ResBlock(nn.Module):
         self.block[-1].weight.data.mul_(1e-2)
         self.block[-1].bias.data.mul_(1e-2)
 
-        if norm == "group":
+        if norm == "layer":
+            self.block.insert(0, LayerNorm(dim=-spatial - 1))
+        elif norm == "group":
             self.block.insert(
                 0,
                 nn.GroupNorm(
@@ -88,8 +90,6 @@ class ResBlock(nn.Module):
                     affine=False,
                 ),
             )
-        elif norm == "layer":
-            self.block.insert(0, LayerNorm(dim=-spatial - 1))
         else:
             raise NotImplementedError()
 
@@ -114,8 +114,8 @@ class ResBlock(nn.Module):
             return self._forward(x)
 
 
-class Encoder(nn.Module):
-    r"""Creates an encoder module.
+class DCEncoder(nn.Module):
+    r"""Creates an deep-compressed (DC) encoder module.
 
     Arguments:
         in_channels: The number of input channels :math:`C_i`.
@@ -144,7 +144,7 @@ class Encoder(nn.Module):
         stride: Union[int, Sequence[int]] = 2,
         pixel_shuffle: bool = False,
         linear_out: bool = True,
-        norm: str = "group",
+        norm: str = "layer",
         attention_heads: Dict[int, int] = {},  # noqa: B006
         spatial: int = 2,
         periodic: bool = False,
@@ -244,8 +244,8 @@ class Encoder(nn.Module):
         return x
 
 
-class Decoder(nn.Module):
-    r"""Creates a decoder module.
+class DCDecoder(nn.Module):
+    r"""Creates a deep-compressed (DC) decoder module.
 
     Arguments:
         in_channels: The number of input channels :math:`C_i`.
@@ -274,7 +274,7 @@ class Decoder(nn.Module):
         stride: Union[int, Sequence[int]] = 2,
         pixel_shuffle: bool = False,
         linear_out: bool = True,
-        norm: str = "group",
+        norm: str = "layer",
         attention_heads: Dict[int, int] = {},  # noqa: B006
         spatial: int = 2,
         periodic: bool = False,
@@ -374,108 +374,3 @@ class Decoder(nn.Module):
                 x = block(x)
 
         return x
-
-
-class AutoEncoder(nn.Module):
-    r"""Creates an auto-encoder module.
-
-    Arguments:
-        pix_channels: The number of pixel channels :math:`C_p`.
-        lat_channels: The number of latent channels :math:`C_l`.
-        out_channels: The number of output channels :math:`C_o`.
-        hid_channels: The numbers of channels at each depth.
-        hid_blocks: The numbers of hidden blocks at each depth.
-        saturation: The type of latent saturation.
-        kwargs: Keyword arguments passed to :class:`Encoder` and :class:`Decoder`.
-    """
-
-    def __init__(
-        self,
-        pix_channels: int,
-        lat_channels: int,
-        out_channels: Optional[int] = None,
-        hid_channels: Sequence[int] = (64, 128, 256),
-        hid_blocks: Sequence[int] = (3, 3, 3),
-        saturation: str = "softclip2",
-        **kwargs,
-    ):
-        super().__init__()
-
-        self.encoder = Encoder(
-            in_channels=pix_channels,
-            out_channels=lat_channels,
-            hid_channels=hid_channels,
-            hid_blocks=hid_blocks,
-            **kwargs,
-        )
-
-        self.decoder = Decoder(
-            in_channels=lat_channels,
-            out_channels=pix_channels if out_channels is None else out_channels,
-            hid_channels=hid_channels,
-            hid_blocks=hid_blocks,
-            **kwargs,
-        )
-
-        self.saturation = saturation
-
-    def saturate(self, x: Tensor) -> Tensor:
-        if self.saturation is None:
-            return x
-        elif self.saturation == "softclip":
-            return x / (1 + abs(x) / 5)
-        elif self.saturation == "softclip2":
-            return x * torch.rsqrt(1 + torch.square(x / 5))
-        elif self.saturation == "tanh":
-            return torch.tanh(x / 5) * 5
-        elif self.saturation == "arcsinh":
-            return torch.arcsinh(x)
-        else:
-            raise ValueError(f"unknown saturation '{self.saturation}'")
-
-    def encode(self, x: Tensor) -> Tensor:
-        z = self.encoder(x)
-        z = self.saturate(z)
-        return z
-
-    def decode(self, z: Tensor) -> Tensor:
-        return self.decoder(z)
-
-    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor]:
-        z = self.encode(x)
-        y = self.decoder(z)
-        return y, z
-
-
-def get_autoencoder(
-    pix_channels: int,
-    lat_channels: int,
-    out_channels: Optional[int] = None,
-    # Common
-    hid_channels: Sequence[int] = (64, 128, 256),
-    hid_blocks: Sequence[int] = (3, 3, 3),
-    saturation: str = "softclip2",
-    # Future
-    arch: Optional[str] = None,
-    # Ignore
-    name: str = None,
-    loss: DictConfig = None,
-    # Passthrough
-    **kwargs,
-) -> AutoEncoder:
-    r"""Instantiates an auto-encoder."""
-
-    if arch is None:
-        autoencoder = AutoEncoder(
-            pix_channels=pix_channels,
-            lat_channels=lat_channels,
-            out_channels=out_channels,
-            hid_channels=hid_channels,
-            hid_blocks=hid_blocks,
-            saturation=saturation,
-            **kwargs,
-        )
-    else:
-        raise NotImplementedError()
-
-    return autoencoder

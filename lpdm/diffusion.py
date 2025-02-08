@@ -16,7 +16,7 @@ from omegaconf import DictConfig
 from torch import BoolTensor, Tensor
 from torch.distributions import Beta, Distribution, Kumaraswamy, Uniform
 from torch.nn.parallel import DistributedDataParallel
-from typing import Dict, Optional, Sequence, Tuple, Union
+from typing import Optional, Sequence, Tuple
 
 from .nn.embedding import SineEncoding
 from .nn.unet import UNet
@@ -337,16 +337,11 @@ class DenoiserLoss(nn.Module):
 
 
 def get_denoiser(
-    arch: str,
     shape: Sequence[int],
-    # Common
-    emb_features: int,
-    hid_channels: Union[int, Sequence[int]],
-    hid_blocks: Union[int, Sequence[int]],
-    attention_heads: Union[int, Dict[int, int]],
-    # Cond
-    cond_channels: int = 0,
     label_features: int = 0,
+    # Arch
+    arch: Optional[str] = None,
+    emb_features: int = 256,
     # Denoiser
     masked: bool = False,
     schedule: Optional[DictConfig] = None,
@@ -366,15 +361,12 @@ def get_denoiser(
     else:
         out_channels = channels
 
-    if arch == "dit" or arch == "vit":
+    if arch in (None, "dit", "vit"):
         backbone = ViT(
             in_channels=channels,
             out_channels=out_channels,
-            cond_channels=channels if masked else cond_channels,
+            cond_channels=channels if masked else 0,
             mod_features=emb_features,
-            hid_channels=hid_channels,
-            hid_blocks=hid_blocks,
-            attention_heads=attention_heads,
             spatial=len(shape) - 1,
             **kwargs,
         )
@@ -382,11 +374,8 @@ def get_denoiser(
         backbone = UNet(
             in_channels=channels,
             out_channels=out_channels,
-            cond_channels=channels if masked else cond_channels,
+            cond_channels=channels if masked else 0,
             mod_features=emb_features,
-            hid_channels=hid_channels,
-            hid_blocks=hid_blocks,
-            attention_heads=attention_heads,
             spatial=len(shape) - 1,
             **kwargs,
         )
