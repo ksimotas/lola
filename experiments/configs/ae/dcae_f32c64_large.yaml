@@ -1,6 +1,7 @@
 name: "dcae_f32c${.lat_channels}_large"
 arch: "dcae"
 saturation: "softclip2"
+latent_noise: 0.0
 lat_channels: 64
 hid_channels: [128, 256, 384, 512, 784, 1024]
 hid_blocks: [1, 2, 3, 3, 3, 3]

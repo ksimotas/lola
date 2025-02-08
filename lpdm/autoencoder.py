@@ -27,6 +27,7 @@ class AutoEncoder(nn.Module):
         encoder: An encoder module.
         decoder: A decoder module.
         saturation: The type of latent saturation.
+        noise: The latent noise's standard deviation.
     """
 
     def __init__(
@@ -34,12 +35,14 @@ class AutoEncoder(nn.Module):
         encoder: nn.Module,
         decoder: nn.Module,
         saturation: str = "softclip2",
+        noise: float = 0.0,
     ):
         super().__init__()
 
         self.encoder = encoder
         self.decoder = decoder
         self.saturation = saturation
+        self.noise = noise
 
     def saturate(self, x: Tensor) -> Tensor:
         if self.saturation is None:
@@ -61,6 +64,9 @@ class AutoEncoder(nn.Module):
         return z
 
     def decode(self, z: Tensor) -> Tensor:
+        if self.noise > 0:
+            z = z + self.noise * torch.randn_like(z)
+
         return self.decoder(z)
 
     def forward(self, x: Tensor) -> Tuple[Tensor, Tensor]:
@@ -125,6 +131,8 @@ def get_autoencoder(
     # Arch
     arch: Optional[str] = None,
     saturation: str = "softclip2",
+    # Noise
+    latent_noise: float = 0.0,
     # Ignore
     name: str = None,
     loss: DictConfig = None,
@@ -174,6 +182,7 @@ def get_autoencoder(
         encoder,
         decoder,
         saturation=saturation,
+        noise=latent_noise,
     )
 
     return autoencoder
