@@ -69,6 +69,7 @@ def get_optimizer(
     precondition_frequency: int = 16,
     precondition_frequency_decay: float = 0.999,
     precondition_dim: int = 4096,
+    merge_dims: bool = False,
     # Ignored
     name: str = None,
     grad_clip: float = None,
@@ -103,8 +104,9 @@ def get_optimizer(
             weight_decay=weight_decay,
             precondition_frequency=precondition_frequency,
             max_precond_dim=precondition_dim,
+            merge_dims=merge_dims,
         )
-    elif optimizer == "fast-soap":
+    elif optimizer == "foreach-soap":
         optimizer = ForeachSOAP(
             params,
             lr=learning_rate,
@@ -113,6 +115,7 @@ def get_optimizer(
             weight_decay=weight_decay,
             precondition_frequency=precondition_frequency,
             max_precond_dim=precondition_dim,
+            merge_dims=merge_dims,
         )
     elif optimizer == "psgd":
         optimizer = ForeachCachedDelayedPSGDKron(
@@ -126,6 +129,7 @@ def get_optimizer(
                 decay=precondition_frequency_decay,
             ),
             max_size_triangular=precondition_dim,
+            merge_dims=merge_dims,
         )
     else:
         raise NotImplementedError()
