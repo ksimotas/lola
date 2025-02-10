@@ -25,6 +25,7 @@ from typing import Hashable, Optional, Sequence, Tuple, Union
 
 from .attention import MultiheadSelfAttention, xfa
 from .embedding import SineEncoding
+from .layers import Patchify, Unpatchify
 
 
 class ViTBlock(nn.Module):
@@ -172,7 +173,7 @@ class ViT(nn.Module):
         hid_channels: int = 1024,
         hid_blocks: int = 3,
         spatial: int = 2,
-        patch_size: Union[int, Sequence[int]] = 4,
+        patch_size: Union[int, Sequence[int]] = 1,
         window_size: Union[int, Sequence[int], None] = None,
         **kwargs,
     ):
@@ -181,22 +182,8 @@ class ViT(nn.Module):
         if isinstance(patch_size, int):
             patch_size = [patch_size] * spatial
 
-        if spatial == 1:
-            (l,) = patch_size
-            self.patch = Rearrange("... C (L l) -> ... L (C l)", l=l)
-            self.unpatch = Rearrange("... L (C l) -> ... C (L l)", l=l)
-        elif spatial == 2:
-            h, w = patch_size
-            self.patch = Rearrange("... C (H h) (W w) -> ... H W (C h w)", h=h, w=w)
-            self.unpatch = Rearrange("... H W (C h w) -> ... C (H h) (W w)", h=h, w=w)
-        elif spatial == 3:
-            l, h, w = patch_size
-            self.patch = Rearrange("... C (L l) (H h) (W w) -> ... L H W (C l h w)", l=l, h=h, w=w)
-            self.unpatch = Rearrange(
-                "... L H W (C l h w) -> ... C (L l) (H h) (W w)", l=l, h=h, w=w
-            )
-        else:
-            raise NotImplementedError()
+        self.patch = Patchify(patch_size, channel_last=True)
+        self.unpatch = Unpatchify(patch_size, channel_last=True)
 
         self.in_proj = nn.Linear(
             math.prod(patch_size) * (in_channels + cond_channels), hid_channels

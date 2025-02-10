@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 
 from einops import rearrange
+from einops.layers.torch import Rearrange
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 from typing import Sequence, Union
@@ -199,44 +200,50 @@ class SelfAttentionNd(nn.MultiheadAttention):
             return self._forward(x)
 
 
-class Patchify(nn.Module):
-    def __init__(self, patch_size: Sequence[int]):
-        super().__init__()
-
-        self.patch_size = patch_size
-
-    def forward(self, x: Tensor) -> Tensor:
-        if len(self.patch_size) == 1:
-            (l,) = self.patch_size
-            return rearrange(x, "... C (L l) -> ... (C l) L", l=l)
-        elif len(self.patch_size) == 2:
-            h, w = self.patch_size
-            return rearrange(x, "... C (H h) (W w) -> ... (C h w) H W", h=h, w=w)
-        elif len(self.patch_size) == 3:
-            l, h, w = self.patch_size
-            return rearrange(x, "... C (L l) (H h) (W w) -> ... (C l h w) L H W", l=l, h=h, w=w)
+def Patchify(patch_size: Sequence[int], channel_last: bool = False) -> Rearrange:
+    if len(patch_size) == 1:
+        (l,) = patch_size
+        if channel_last:
+            return Rearrange("... C (L l) -> ... L (C l)", l=l)
         else:
-            raise NotImplementedError()
-
-
-class Unpatchify(nn.Module):
-    def __init__(self, patch_size: Sequence[int]):
-        super().__init__()
-
-        self.patch_size = patch_size
-
-    def forward(self, x: Tensor) -> Tensor:
-        if len(self.patch_size) == 1:
-            (l,) = self.patch_size
-            return rearrange(x, "... (C l) L -> ... C (L l)", l=l)
-        elif len(self.patch_size) == 2:
-            h, w = self.patch_size
-            return rearrange(x, "... (C h w) H W -> ... C (H h) (W w)", h=h, w=w)
-        elif len(self.patch_size) == 3:
-            l, h, w = self.patch_size
-            return rearrange(x, "... (C l h w) L H W -> ... C (L l) (H h) (W w)", l=l, h=h, w=w)
+            return Rearrange("... C (L l) -> ... (C l) L", l=l)
+    elif len(patch_size) == 2:
+        h, w = patch_size
+        if channel_last:
+            return Rearrange("... C (H h) (W w) -> ... H W (C h w)", h=h, w=w)
         else:
-            raise NotImplementedError()
+            return Rearrange("... C (H h) (W w) -> ... (C h w) H W", h=h, w=w)
+    elif len(patch_size) == 3:
+        l, h, w = patch_size
+        if channel_last:
+            return Rearrange("... C (L l) (H h) (W w) -> ... L H W (C l h w)", l=l, h=h, w=w)
+        else:
+            return Rearrange("... C (L l) (H h) (W w) -> ... (C l h w) L H W", l=l, h=h, w=w)
+    else:
+        raise NotImplementedError()
+
+
+def Unpatchify(patch_size: Sequence[int], channel_last: bool = False) -> Rearrange:
+    if len(patch_size) == 1:
+        (l,) = patch_size
+        if channel_last:
+            return Rearrange("... L (C l) -> ... C (L l)", l=l)
+        else:
+            return Rearrange("... (C l) L -> ... C (L l)", l=l)
+    elif len(patch_size) == 2:
+        h, w = patch_size
+        if channel_last:
+            return Rearrange("... H W (C h w) -> ... C (H h) (W w)", h=h, w=w)
+        else:
+            return Rearrange("... (C h w) H W -> ... C (H h) (W w)", h=h, w=w)
+    elif len(patch_size) == 3:
+        l, h, w = patch_size
+        if channel_last:
+            return Rearrange("... L H W (C l h w) -> ... C (L l) (H h) (W w)", l=l, h=h, w=w)
+        else:
+            return Rearrange("... (C l h w) L H W -> ... C (L l) (H h) (W w)", l=l, h=h, w=w)
+    else:
+        raise NotImplementedError()
 
 
 class Shrink(nn.Module):
