@@ -15,6 +15,7 @@ fork:
   run: null
   target: "state"
   strict: true
+  freeze: []
 
 compute:
   cpus_per_gpu: 8

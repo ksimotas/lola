@@ -141,7 +141,7 @@ def get_autoencoder(
     loss: DictConfig = None,
     # Passthrough
     **kwargs,
-) -> nn.Module:
+) -> AutoEncoder:
     r"""Instantiates an auto-encoder."""
 
     if arch in (None, "dcae"):

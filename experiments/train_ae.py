@@ -126,6 +126,11 @@ def train(runid: str, cfg: DictConfig):
         load_state_dict(autoencoder, stem_state, strict=cfg.fork.strict)
         del stem_state
 
+        if "encoder" in cfg.fork.freeze:
+            autoencoder.encoder.requires_grad_(False)
+        if "decoder" in cfg.fork.freeze:
+            autoencoder.decoder.requires_grad_(False)
+
     autoencoder = DistributedDataParallel(
         module=autoencoder,
         device_ids=[device_id],
