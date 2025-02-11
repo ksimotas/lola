@@ -8,6 +8,7 @@ hid_blocks: [1, 2, 3, 3, 3, 3]
 pixel_shuffle: true
 norm: "layer"
 attention_heads: {5: 8}
+ffn_factor: 1
 dropout: 0.05
 checkpointing: false
 identity_init: true

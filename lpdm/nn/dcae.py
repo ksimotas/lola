@@ -39,6 +39,7 @@ class ResBlock(nn.Module):
         norm: The kind of normalization.
         groups: The number of groups in :class:`torch.nn.GroupNorm` layers.
         attention_heads: The number of attention heads.
+        ffn_factor: The channel factor in the FFN.
         spatial: The number of spatial dimensions :math:`N`.
         dropout: The dropout rate in :math:`[0, 1]`.
         checkpointing: Whether to use gradient checkpointing or not.
@@ -51,6 +52,7 @@ class ResBlock(nn.Module):
         norm: str = "layer",
         groups: int = 16,
         attention_heads: Optional[int] = None,
+        ffn_factor: int = 1,
         spatial: int = 2,
         dropout: Optional[float] = None,
         checkpointing: bool = False,
@@ -60,6 +62,18 @@ class ResBlock(nn.Module):
 
         self.checkpointing = checkpointing
 
+        # Norm
+        if norm == "layer":
+            self.norm = LayerNorm(dim=-spatial - 1)
+        elif norm == "group":
+            self.norm = nn.GroupNorm(
+                num_groups=min(groups, channels),
+                num_channels=channels,
+                affine=False,
+            )
+        else:
+            raise NotImplementedError()
+
         # Attention
         if attention_heads is None:
             self.attn = nn.Identity()
@@ -68,29 +82,15 @@ class ResBlock(nn.Module):
                 SelfAttentionNd(channels, heads=attention_heads),
             )
 
-        # Block
-        self.block = nn.Sequential(
-            ConvNd(channels, channels, spatial=spatial, **kwargs),
+        # FFN
+        self.ffn = nn.Sequential(
+            ConvNd(channels, ffn_factor * channels, spatial=spatial, **kwargs),
             nn.SiLU(),
             nn.Identity() if dropout is None else nn.Dropout(dropout),
-            ConvNd(channels, channels, spatial=spatial, **kwargs),
+            ConvNd(ffn_factor * channels, channels, spatial=spatial, **kwargs),
         )
 
-        self.block[-1].weight.data.mul_(1e-2)
-
-        if norm == "layer":
-            self.block.insert(0, LayerNorm(dim=-spatial - 1))
-        elif norm == "group":
-            self.block.insert(
-                0,
-                nn.GroupNorm(
-                    num_groups=min(groups, channels),
-                    num_channels=channels,
-                    affine=False,
-                ),
-            )
-        else:
-            raise NotImplementedError()
+        self.ffn[-1].weight.data.mul_(1e-2)
 
     def _forward(self, x: Tensor) -> Tensor:
         r"""
@@ -101,8 +101,9 @@ class ResBlock(nn.Module):
             The output tensor, with shape :math:`(B, C, L_1, ..., L_N)`.
         """
 
-        y = self.attn(x)
-        y = self.block(y)
+        y = self.norm(x)
+        y = self.attn(y)
+        y = self.ffn(y)
 
         return x + y
 
@@ -141,10 +142,10 @@ class DCEncoder(nn.Module):
         hid_blocks: Sequence[int] = (3, 3, 3),
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
-        pixel_shuffle: bool = False,
-        linear_out: bool = True,
+        pixel_shuffle: bool = True,
         norm: str = "layer",
         attention_heads: Dict[int, int] = {},  # noqa: B006
+        ffn_factor: int = 1,
         spatial: int = 2,
         patch_size: Union[int, Sequence[int]] = 1,
         periodic: bool = False,
@@ -155,7 +156,6 @@ class DCEncoder(nn.Module):
         super().__init__()
 
         assert len(hid_blocks) == len(hid_channels)
-        assert linear_out, "non-linear output projection is not supported"
 
         if isinstance(kernel_size, int):
             kernel_size = [kernel_size] * spatial
@@ -219,6 +219,7 @@ class DCEncoder(nn.Module):
                         hid_channels[i],
                         norm=norm,
                         attention_heads=attention_heads.get(i, None),
+                        ffn_factor=ffn_factor,
                         spatial=spatial,
                         dropout=dropout,
                         checkpointing=checkpointing,
@@ -285,10 +286,10 @@ class DCDecoder(nn.Module):
         hid_blocks: Sequence[int] = (3, 3, 3),
         kernel_size: Union[int, Sequence[int]] = 3,
         stride: Union[int, Sequence[int]] = 2,
-        pixel_shuffle: bool = False,
-        linear_out: bool = True,
+        pixel_shuffle: bool = True,
         norm: str = "layer",
         attention_heads: Dict[int, int] = {},  # noqa: B006
+        ffn_factor: int = 1,
         spatial: int = 2,
         patch_size: Union[int, Sequence[int]] = 1,
         periodic: bool = False,
@@ -299,7 +300,6 @@ class DCDecoder(nn.Module):
         super().__init__()
 
         assert len(hid_blocks) == len(hid_channels)
-        assert linear_out, "non-linear output projection is not supported"
 
         if isinstance(kernel_size, int):
             kernel_size = [kernel_size] * spatial
@@ -339,6 +339,7 @@ class DCDecoder(nn.Module):
                         hid_channels[i],
                         norm=norm,
                         attention_heads=attention_heads.get(i, None),
+                        ffn_factor=ffn_factor,
                         spatial=spatial,
                         dropout=dropout,
                         checkpointing=checkpointing,

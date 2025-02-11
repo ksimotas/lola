@@ -34,7 +34,7 @@ class ViTBlock(nn.Module):
     Arguments:
         channels: The number of channels :math:`C`.
         mod_features: The number of modulating features :math:`D`.
-        mlp_factor: The channel factor in the MLP.
+        ffn_factor: The channel factor in the FFN.
         spatial: The number of spatial dimensinons :math:`N`.
         rope: Whether to use rotary positional embedding (RoPE) or not.
         dropout: The dropout rate in :math:`[0, 1]`.
@@ -46,7 +46,7 @@ class ViTBlock(nn.Module):
         self,
         channels: int,
         mod_features: int = 0,
-        mlp_factor: int = 4,
+        ffn_factor: int = 4,
         spatial: int = 2,
         rope: bool = True,
         dropout: Optional[float] = None,
@@ -85,12 +85,12 @@ class ViTBlock(nn.Module):
         else:
             self.theta = None
 
-        # MLP
-        self.mlp = nn.Sequential(
-            nn.Linear(channels, mlp_factor * channels),
+        # FFN
+        self.ffn = nn.Sequential(
+            nn.Linear(channels, ffn_factor * channels),
             nn.SiLU(),
             nn.Identity() if dropout is None else nn.Dropout(dropout),
-            nn.Linear(mlp_factor * channels, channels),
+            nn.Linear(ffn_factor * channels, channels),
         )
 
     def _forward(
@@ -125,7 +125,7 @@ class ViTBlock(nn.Module):
 
         y = (a + 1) * self.norm(x) + b
         y = y + self.msa(y, theta, mask)
-        y = self.mlp(y)
+        y = self.ffn(y)
         y = (x + c * y) * torch.rsqrt(1 + c * c)
 
         if skip is not None:

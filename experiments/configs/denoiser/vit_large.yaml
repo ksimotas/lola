@@ -3,7 +3,7 @@ arch: "vit"
 emb_features: 256
 hid_channels: 1024
 hid_blocks: 16
-mlp_factor: 4
+ffn_factor: 4
 attention_heads: 8
 qk_norm: true
 rope: true

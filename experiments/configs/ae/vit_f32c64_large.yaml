@@ -5,7 +5,7 @@ latent_noise: 0.0
 lat_channels: 64
 hid_channels: 1024
 hid_blocks: 8
-mlp_factor: 4
+ffn_factor: 4
 attention_heads: 8
 qk_norm: true
 rope: true
