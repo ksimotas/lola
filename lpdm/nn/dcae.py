@@ -147,6 +147,7 @@ class DCEncoder(nn.Module):
         norm: str = "layer",
         attention_heads: Dict[int, int] = {},  # noqa: B006
         spatial: int = 2,
+        patch_size: Union[int, Sequence[int]] = 1,
         periodic: bool = False,
         dropout: Optional[float] = None,
         checkpointing: bool = False,
@@ -163,12 +164,16 @@ class DCEncoder(nn.Module):
         if isinstance(stride, int):
             stride = [stride] * spatial
 
+        if isinstance(patch_size, int):
+            patch_size = [patch_size] * spatial
+
         kwargs = dict(
             kernel_size=tuple(kernel_size),
             padding=tuple(k // 2 for k in kernel_size),
             padding_mode="circular" if periodic else "zeros",
         )
 
+        self.patch = Patchify(patch_size=patch_size)
         self.descent = nn.ModuleList()
 
         for i, num_blocks in enumerate(hid_blocks):
@@ -200,7 +205,14 @@ class DCEncoder(nn.Module):
                         )
                     )
             else:
-                blocks.append(ConvNd(in_channels, hid_channels[i], spatial=spatial, **kwargs))
+                blocks.append(
+                    ConvNd(
+                        math.prod(patch_size) * in_channels,
+                        hid_channels[i],
+                        spatial=spatial,
+                        **kwargs,
+                    )
+                )
 
             for _ in range(num_blocks):
                 blocks.append(
@@ -236,6 +248,8 @@ class DCEncoder(nn.Module):
         Returns:
             The output tensor, with shape :math:`(B, C_o, L_1 / 2^D, ..., L_N  / 2^D)`.
         """
+
+        x = self.patch(x)
 
         for blocks in self.descent:
             for block in blocks:
@@ -277,10 +291,11 @@ class DCDecoder(nn.Module):
         norm: str = "layer",
         attention_heads: Dict[int, int] = {},  # noqa: B006
         spatial: int = 2,
+        patch_size: Union[int, Sequence[int]] = 1,
         periodic: bool = False,
         dropout: Optional[float] = None,
         checkpointing: bool = False,
-        identity_init: bool = False,
+        identity_init: bool = True,
     ):
         super().__init__()
 
@@ -293,12 +308,16 @@ class DCDecoder(nn.Module):
         if isinstance(stride, int):
             stride = [stride] * spatial
 
+        if isinstance(patch_size, int):
+            patch_size = [patch_size] * spatial
+
         kwargs = dict(
             kernel_size=tuple(kernel_size),
             padding=tuple(k // 2 for k in kernel_size),
             padding_mode="circular" if periodic else "zeros",
         )
 
+        self.unpatch = Unpatchify(patch_size=patch_size)
         self.ascent = nn.ModuleList()
 
         for i, num_blocks in reversed(list(enumerate(hid_blocks))):
@@ -356,7 +375,14 @@ class DCDecoder(nn.Module):
                         )
                     )
             else:
-                blocks.append(ConvNd(hid_channels[i], out_channels, spatial=spatial, **kwargs))
+                blocks.append(
+                    ConvNd(
+                        hid_channels[i],
+                        math.prod(patch_size) * out_channels,
+                        spatial=spatial,
+                        **kwargs,
+                    )
+                )
 
             self.ascent.append(blocks)
 
@@ -372,5 +398,7 @@ class DCDecoder(nn.Module):
         for blocks in self.ascent:
             for block in blocks:
                 x = block(x)
+
+        x = self.unpatch(x)
 
         return x
