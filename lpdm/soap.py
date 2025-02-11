@@ -21,6 +21,7 @@ class SOAP(torch.optim.Optimizer):
         eps: float = 1e-8,
         weight_decay: float = 0.0,
         precondition_frequency: int = 16,
+        precondition_warmup: int = 0,
         precondition_1d: bool = False,
         max_precond_dim: int = 4096,
         merge_dims: bool = False,
@@ -32,9 +33,10 @@ class SOAP(torch.optim.Optimizer):
             "eps": eps,
             "weight_decay": weight_decay,
             "precondition_frequency": precondition_frequency,
+            "precondition_warmup": precondition_warmup,
+            "precondition_1d": precondition_1d,
             "max_precond_dim": max_precond_dim,
             "merge_dims": merge_dims,
-            "precondition_1d": precondition_1d,
         }
         super().__init__(params, defaults)
 
@@ -99,6 +101,7 @@ class SOAP(torch.optim.Optimizer):
                         state,
                         shampoo_beta=group["shampoo_beta"],
                         precondition_frequency=group["precondition_frequency"],
+                        precondition_warmup=group["precondition_warmup"],
                     )
 
                     continue  # skip first gradient step
@@ -146,6 +149,7 @@ class SOAP(torch.optim.Optimizer):
                     state,
                     shampoo_beta=group["shampoo_beta"],
                     precondition_frequency=group["precondition_frequency"],
+                    precondition_warmup=group["precondition_warmup"],
                 )
 
             torch._foreach_add_(params, updates, alpha=-group["lr"])
@@ -190,6 +194,7 @@ class SOAP(torch.optim.Optimizer):
         state,
         shampoo_beta=0.999,
         precondition_frequency=16,
+        precondition_warmup=0,
     ):
         """Updates the preconditioner matrices and the eigenbases."""
 
@@ -207,8 +212,9 @@ class SOAP(torch.optim.Optimizer):
         if state["Q"] is None:
             state["Q"] = self.get_orthogonal_matrix(state)
 
-        if state["step"] > 0 and state["step"] % precondition_frequency == 0:
-            state["Q"] = self.get_orthogonal_matrix_QR(state)
+        if state["step"] > 0:
+            if state["step"] < precondition_warmup or state["step"] % precondition_frequency == 0:
+                state["Q"] = self.get_orthogonal_matrix_QR(state)
 
     def project(self, grad, state):
         """Projects the gradient to the eigenbases of the preconditioner."""

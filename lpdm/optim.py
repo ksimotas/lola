@@ -68,6 +68,7 @@ def get_optimizer(
     # SOAP & PSGD
     precondition_frequency: int = 16,
     precondition_frequency_decay: float = 0.999,
+    precondition_warmup: int = 0,
     precondition_dim: int = 4096,
     merge_dims: bool = False,
     # Ignored
@@ -103,6 +104,7 @@ def get_optimizer(
             betas=betas,
             weight_decay=weight_decay,
             precondition_frequency=precondition_frequency,
+            precondition_warmup=precondition_warmup,
             max_precond_dim=precondition_dim,
             merge_dims=merge_dims,
         )
