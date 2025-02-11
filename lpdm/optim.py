@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 
 from functools import partial
-from heavyball import ForeachCachedDelayedPSGDKron, ForeachSOAP
+from heavyball import ForeachCachedDelayedPSGDKron, ForeachSFAdamW, ForeachSOAP
 from torch import Tensor
 from typing import Iterable, Optional, Sequence, Tuple
 
@@ -97,6 +97,13 @@ def get_optimizer(
             betas=betas[:2],
             weight_decay=weight_decay,
         )
+    elif optimizer == "adamw-sf":
+        optimizer = ForeachSFAdamW(
+            params,
+            lr=learning_rate,
+            betas=betas[:2],
+            weight_decay=weight_decay,
+        )
     elif optimizer == "soap":
         optimizer = SOAP(
             params,
@@ -108,7 +115,7 @@ def get_optimizer(
             max_precond_dim=precondition_dim,
             merge_dims=merge_dims,
         )
-    elif optimizer == "foreach-soap":
+    elif optimizer == "soap-foreach":
         optimizer = ForeachSOAP(
             params,
             lr=learning_rate,
