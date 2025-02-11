@@ -55,6 +55,8 @@ class AutoEncoder(nn.Module):
             return torch.tanh(x / 5) * 5
         elif self.saturation == "arcsinh":
             return torch.arcsinh(x)
+        elif self.saturation == "rmsnorm":
+            return x * torch.rsqrt(torch.mean(torch.square(x), dim=1, keepdim=True) + 1e-5)
         else:
             raise ValueError(f"unknown saturation '{self.saturation}'")
 
