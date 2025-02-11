@@ -26,7 +26,7 @@ def train(runid: str, cfg: DictConfig):
     from lpdm.diffusion import DenoiserLoss, get_denoiser
     from lpdm.emulation import random_context_mask
     from lpdm.nn.utils import load_state_dict
-    from lpdm.optim import ExponentialMovingAverage, get_optimizer, safe_gd_step
+    from lpdm.optim import get_optimizer, safe_gd_step
     from lpdm.utils import randseed
 
     # DDP
@@ -149,11 +149,6 @@ def train(runid: str, cfg: DictConfig):
         **cfg.optim,
     )
 
-    average = ExponentialMovingAverage(
-        module=denoiser.module,
-        decay=cfg.train.ema_decay,
-    )
-
     # W&B
     if rank == 0:
         run = wandb.init(
@@ -191,8 +186,6 @@ def train(runid: str, cfg: DictConfig):
 
                 grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
                 grads.append(grad_norm)
-
-                average.update_parameters(denoiser.module)
 
                 counter["update_samples"] += cfg.train.batch_size
                 counter["update_steps"] += 1
@@ -279,19 +272,15 @@ def train(runid: str, cfg: DictConfig):
         ## Checkpoint
         if rank == 0:
             state = denoiser.module.state_dict()
-            state_ema = average.module.state_dict()
 
             torch.save(state, runpath / "state.pth")
-            torch.save(state_ema, runpath / "state_ema.pth")
 
             if logs["valid/loss/mean"] < best_valid_loss:
                 best_valid_loss = logs["valid/loss/mean"]
 
                 torch.save(state, runpath / "state_best.pth")
-                torch.save(state_ema, runpath / "state_best_ema.pth")
 
             del state
-            del state_ema
 
         dist.barrier(device_ids=[device_id])
 
