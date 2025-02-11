@@ -158,7 +158,8 @@ class ViT(nn.Module):
         hid_channels: The numbers of hidden token channels.
         hid_blocks: The number of hidden transformer blocks.
         spatial: The number of spatial dimensions :math:`N`.
-        patch_size: The path size.
+        patch_size: The patch size.
+        unpatch_size: The unpatch size.
         window_size: The local attention window size.
         kwargs: Keyword arguments passed to :class:`ViTBlock`.
     """
@@ -173,6 +174,7 @@ class ViT(nn.Module):
         hid_blocks: int = 3,
         spatial: int = 2,
         patch_size: Union[int, Sequence[int]] = 1,
+        unpatch_size: Union[int, Sequence[int], None] = None,
         window_size: Union[int, Sequence[int], None] = None,
         **kwargs,
     ):
@@ -181,8 +183,13 @@ class ViT(nn.Module):
         if isinstance(patch_size, int):
             patch_size = [patch_size] * spatial
 
+        if unpatch_size is None:
+            unpatch_size = patch_size
+        elif isinstance(unpatch_size, int):
+            unpatch_size = [unpatch_size] * spatial
+
         self.patch = Patchify(patch_size, channel_last=True)
-        self.unpatch = Unpatchify(patch_size, channel_last=True)
+        self.unpatch = Unpatchify(unpatch_size, channel_last=True)
 
         self.in_proj = nn.Linear(
             math.prod(patch_size) * (in_channels + cond_channels), hid_channels

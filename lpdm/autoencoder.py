@@ -10,7 +10,6 @@ import torch
 import torch.nn as nn
 
 from einops import rearrange
-from einops.layers.torch import Rearrange
 from omegaconf import DictConfig
 from torch import Tensor
 from torch.nn.functional import cosine_similarity
@@ -163,27 +162,28 @@ def get_autoencoder(
             **kwargs,
         )
     elif arch == "vit":
+        patch_size = kwargs.pop("patch_size", 1)
+        unpatch_size = kwargs.pop("unpatch_size", 1)
+
         encoder = ViT(
             in_channels=pix_channels,
             out_channels=lat_channels,
             spatial=spatial,
+            patch_size=patch_size,
+            unpatch_size=unpatch_size,
             **encoder_only,
             **kwargs,
         )
-
-        encoder.out_proj = nn.Linear(encoder.out_proj.in_features, lat_channels)
-        encoder.unpatch = Rearrange("B ... C -> B C ...")
 
         decoder = ViT(
             in_channels=lat_channels,
             out_channels=pix_channels,
             spatial=spatial,
+            patch_size=unpatch_size,
+            unpatch_size=patch_size,
             **decoder_only,
             **kwargs,
         )
-
-        decoder.in_proj = nn.Linear(lat_channels, decoder.in_proj.out_features)
-        decoder.patch = Rearrange("B C ... -> B ... C")
     else:
         raise NotImplementedError()
 
