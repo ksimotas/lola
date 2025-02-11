@@ -14,7 +14,7 @@ from einops.layers.torch import Rearrange
 from omegaconf import DictConfig
 from torch import Tensor
 from torch.nn.functional import cosine_similarity
-from typing import Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 from .nn.dcae import DCDecoder, DCEncoder
 from .nn.vit import ViT
@@ -131,6 +131,9 @@ def get_autoencoder(
     # Arch
     arch: Optional[str] = None,
     saturation: str = "softclip2",
+    # Asymmetry
+    encoder_only: Dict[str, Any] = {},  # noqa: B006
+    decoder_only: Dict[str, Any] = {},  # noqa: B006
     # Noise
     latent_noise: float = 0.0,
     # Ignore
@@ -146,6 +149,7 @@ def get_autoencoder(
             in_channels=pix_channels,
             out_channels=lat_channels,
             spatial=spatial,
+            **encoder_only,
             **kwargs,
         )
 
@@ -153,6 +157,7 @@ def get_autoencoder(
             in_channels=lat_channels,
             out_channels=pix_channels,
             spatial=spatial,
+            **decoder_only,
             **kwargs,
         )
     elif arch == "vit":
@@ -160,6 +165,7 @@ def get_autoencoder(
             in_channels=pix_channels,
             out_channels=lat_channels,
             spatial=spatial,
+            **encoder_only,
             **kwargs,
         )
 
@@ -170,6 +176,7 @@ def get_autoencoder(
             in_channels=lat_channels,
             out_channels=pix_channels,
             spatial=spatial,
+            **decoder_only,
             **kwargs,
         )
 
