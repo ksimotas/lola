@@ -77,7 +77,6 @@ class ResBlock(nn.Module):
         )
 
         self.block[-1].weight.data.mul_(1e-2)
-        self.block[-1].bias.data.mul_(1e-2)
 
         if norm == "layer":
             self.block.insert(0, LayerNorm(dim=-spatial - 1))

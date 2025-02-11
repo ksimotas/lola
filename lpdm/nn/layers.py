@@ -63,8 +63,6 @@ def ConvNd(
         conv.weight.data.mul_(1e-2)
         conv.weight.data.add_(eye)
 
-        conv.bias.data.mul_(1e-2)
-
     return conv
 
 

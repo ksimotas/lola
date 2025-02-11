@@ -69,7 +69,6 @@ class ViTBlock(nn.Module):
             )
 
             self.ada_zero[-2].weight.data.mul_(1e-2)
-            self.ada_zero[-2].bias.data.mul_(1e-2)
         else:
             self.ada_zero = nn.Parameter(torch.randn(4, channels))
             self.ada_zero.data.mul_(1e-2)
