@@ -1,14 +1,14 @@
 defaults:
-  - ae: dcae_f32c64_medium
+  - ae: dcae_f32c64_large
   - ae/loss: mae
   - dataset: euler_all
   - optim: psgd
   - server: rusty
 
 train:
-  epochs: 4096
+  epochs: 1024
   epoch_size: 16384
-  batch_size: 256
+  batch_size: 64
   accumulation: 1
 
 fork:
@@ -18,7 +18,7 @@ fork:
 
 compute:
   cpus_per_gpu: 8
-  gpus: 8
+  gpus: 4
   ram: "512GB"
   time: "7-00:00:00"
 
