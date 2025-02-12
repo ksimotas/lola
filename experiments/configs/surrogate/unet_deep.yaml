@@ -6,6 +6,7 @@ hid_blocks: [1, 2, 3, 3, 3, 3]
 stride: [1, 2, 2]
 norm: "layer"
 attention_heads: {5: 8}
+ffn_factor: 1
 periodic: true
 dropout: 0.05
 checkpointing: true

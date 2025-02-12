@@ -30,6 +30,7 @@ class UNetBlock(nn.Module):
         norm: The kind of normalization.
         groups: The number of groups in :class:`torch.nn.GroupNorm` layers.
         attention_heads: The number of attention heads.
+        ffn_factor: The channel factor in the FFN.
         spatial: The number of spatial dimensions :math:`N`.
         dropout: The dropout rate in :math:`[0, 1]`.
         checkpointing: Whether to use gradient checkpointing or not.
@@ -43,6 +44,7 @@ class UNetBlock(nn.Module):
         norm: str = "layer",
         groups: int = 16,
         attention_heads: Optional[int] = None,
+        ffn_factor: int = 1,
         spatial: int = 2,
         dropout: Optional[float] = None,
         checkpointing: bool = False,
@@ -57,6 +59,8 @@ class UNetBlock(nn.Module):
             self.attn = None
         else:
             self.attn = SelfAttentionNd(channels, heads=attention_heads)
+
+            kwargs.update(kernel_size=1, padding=0)
 
         # Ada-Norm Zero
         if norm == "layer":
@@ -84,11 +88,11 @@ class UNetBlock(nn.Module):
             self.ada_zero.data.mul_(1e-2)
 
         # Block
-        self.block = nn.Sequential(
-            ConvNd(channels, channels, spatial=spatial, **kwargs),
+        self.ffn = nn.Sequential(
+            ConvNd(channels, ffn_factor * channels, spatial=spatial, **kwargs),
             nn.SiLU(),
             nn.Identity() if dropout is None else nn.Dropout(dropout),
-            ConvNd(channels, channels, spatial=spatial, **kwargs),
+            ConvNd(ffn_factor * channels, channels, spatial=spatial, **kwargs),
         )
 
     def _forward(self, x: Tensor, mod: Optional[Tensor] = None) -> Tensor:
@@ -108,7 +112,7 @@ class UNetBlock(nn.Module):
 
         y = (a + 1) * self.norm(x) + b
         y = y if self.attn is None else y + self.attn(y)
-        y = self.block(y)
+        y = self.ffn(y)
         y = (x + c * y) * torch.rsqrt(1 + c * c)
 
         return y
@@ -157,6 +161,7 @@ class UNet(nn.Module):
         stride: Union[int, Sequence[int]] = 2,
         norm: str = "layer",
         attention_heads: Dict[int, int] = {},  # noqa: B006
+        ffn_factor: int = 1,
         spatial: int = 2,
         periodic: bool = False,
         dropout: Optional[float] = None,
@@ -191,6 +196,7 @@ class UNet(nn.Module):
                         mod_features,
                         norm=norm,
                         attention_heads=attention_heads.get(i, None),
+                        ffn_factor=ffn_factor,
                         spatial=spatial,
                         dropout=dropout,
                         checkpointing=checkpointing,
@@ -204,6 +210,7 @@ class UNet(nn.Module):
                         mod_features,
                         norm=norm,
                         attention_heads=attention_heads.get(i, None),
+                        ffn_factor=ffn_factor,
                         spatial=spatial,
                         dropout=dropout,
                         checkpointing=checkpointing,

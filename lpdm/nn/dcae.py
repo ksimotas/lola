@@ -82,6 +82,8 @@ class ResBlock(nn.Module):
                 SelfAttentionNd(channels, heads=attention_heads),
             )
 
+            kwargs.update(kernel_size=1, padding=0)
+
         # FFN
         self.ffn = nn.Sequential(
             ConvNd(channels, ffn_factor * channels, spatial=spatial, **kwargs),
