@@ -1,13 +1,13 @@
-name: "dcae_f32c${.lat_channels}_medium"
+name: "dcae_f32c${.lat_channels}_small"
 arch: "dcae"
 saturation: "softclip2"
 latent_noise: 0.01
 lat_channels: 64
-hid_channels: [32, 64, 128, 256, 512, 1024]
-hid_blocks: [1, 2, 3, 3, 3, 3]
+hid_channels: [32, 64, 128, 256, 384, 512]
+hid_blocks: [3, 3, 3, 3, 3, 3]
 pixel_shuffle: true
 norm: "layer"
-attention_heads: {5: 8}
+attention_heads: {5: 4}
 ffn_factor: 1
 dropout: 0.05
 checkpointing: false

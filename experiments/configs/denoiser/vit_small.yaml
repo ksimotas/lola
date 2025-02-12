@@ -1,4 +1,4 @@
-name: "vit_medium"
+name: "vit_small"
 arch: "vit"
 emb_features: 256
 hid_channels: 512
