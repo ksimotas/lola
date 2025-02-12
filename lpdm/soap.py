@@ -17,7 +17,7 @@ class SOAP(torch.optim.Optimizer):
         self,
         params: Iterable[torch.nn.Parameter],
         lr: float = 1e-3,
-        betas: Tuple[float, float, float] = (0.9, 0.999, 0.999),
+        betas: Tuple[float, float, float] = (0.9, 0.99, 0.99),
         eps: float = 1e-8,
         weight_decay: float = 0.0,
         precondition_frequency: int = 16,
@@ -188,7 +188,7 @@ class SOAP(torch.optim.Optimizer):
         self,
         grad,
         state,
-        shampoo_beta=0.999,
+        shampoo_beta=0.99,
         precondition_frequency=16,
         precondition_warmup=0,
     ):

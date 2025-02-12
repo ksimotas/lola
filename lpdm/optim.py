@@ -59,7 +59,7 @@ def precond_prob_schedule(n, max_prob=1.0, min_prob=0.01, decay=0.999, flat_star
 def get_optimizer(
     params: Iterable[nn.Parameter],
     optimizer: str = "adamw",
-    betas: Sequence[float] = (0.9, 0.999, 0.999),
+    betas: Sequence[float] = (0.9, 0.99, 0.99),
     learning_rate: float = 1e-4,
     weight_decay: float = 0.0,
     scheduler: Optional[str] = None,

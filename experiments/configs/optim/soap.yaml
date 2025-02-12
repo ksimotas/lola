@@ -1,6 +1,6 @@
 name: "${.optimizer}_${.learning_rate}_${.scheduler}"
 optimizer: "soap"
-betas: [0.9, 0.999, 0.999]
+betas: [0.9, 0.99, 0.99]
 precondition_frequency: 16
 precondition_warmup: 0
 precondition_dim: 4096
