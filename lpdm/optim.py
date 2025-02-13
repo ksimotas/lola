@@ -69,7 +69,7 @@ def get_optimizer(
     precondition_frequency: int = 16,
     precondition_frequency_decay: float = 0.999,
     precondition_warmup: int = 0,
-    precondition_dim: int = 4096,
+    precondition_size: int = 4096,
     merge_dims: bool = False,
     # Ignored
     name: str = None,
@@ -112,7 +112,7 @@ def get_optimizer(
             weight_decay=weight_decay,
             precondition_frequency=precondition_frequency,
             precondition_warmup=precondition_warmup,
-            max_precond_dim=precondition_dim,
+            max_precond_size=precondition_size,
             merge_dims=merge_dims,
         )
     elif optimizer == "soap-foreach":
@@ -123,7 +123,7 @@ def get_optimizer(
             shampoo_beta=betas[2],
             weight_decay=weight_decay,
             precondition_frequency=precondition_frequency,
-            max_precond_dim=precondition_dim,
+            max_precond_dim=precondition_size,
             merge_dims=merge_dims,
         )
     elif optimizer == "psgd":
@@ -137,7 +137,7 @@ def get_optimizer(
                 min_prob=1 / precondition_frequency,
                 decay=precondition_frequency_decay,
             ),
-            max_size_triangular=precondition_dim,
+            max_size_triangular=precondition_size,
             merge_dims=merge_dims,
         )
     else:
