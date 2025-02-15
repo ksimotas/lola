@@ -18,6 +18,10 @@ train:
   batch_size: 256
   accumulation: 1
 
+valid:
+  epoch_size: 4096
+  batch_size: 256
+
 fork:
   run: null
   target: "state"

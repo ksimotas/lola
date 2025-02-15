@@ -43,6 +43,8 @@ def train(runid: str, cfg: DictConfig):
     # Config
     assert cfg.train.epoch_size % cfg.train.batch_size == 0
     assert cfg.train.batch_size % (cfg.train.accumulation * world_size) == 0
+    assert cfg.valid.epoch_size % cfg.valid.batch_size == 0
+    assert cfg.valid.batch_size % world_size == 0
 
     runname = f"{runid}_{cfg.dataset.name}_{cfg.denoiser.name}"
 
@@ -110,7 +112,11 @@ def train(runid: str, cfg: DictConfig):
     train_loader, valid_loader = [
         get_dataloader(
             dataset=dataset[split],
-            batch_size=cfg.train.batch_size // cfg.train.accumulation // world_size,
+            batch_size=(
+                cfg.train.batch_size // cfg.train.accumulation // world_size
+                if split == "train"
+                else cfg.valid.batch_size // world_size
+            ),
             shuffle=True if split == "train" else False,
             infinite=True,
             num_workers=cfg.compute.cpus_per_gpu,
@@ -231,7 +237,7 @@ def train(runid: str, cfg: DictConfig):
         losses = []
 
         with torch.no_grad():
-            for _ in range(cfg.train.epoch_size // cfg.train.batch_size):
+            for _ in range(cfg.valid.epoch_size // cfg.valid.batch_size):
                 z, label = get_well_inputs(next(valid_loader), device=device)
                 z = rearrange(z, "B L H W C -> B C L H W")
 
