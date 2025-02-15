@@ -97,7 +97,7 @@ def train(runid: str, cfg: DictConfig):
         get_dataloader(
             dataset=dataset[split],
             batch_size=cfg.train.batch_size // cfg.train.accumulation // world_size,
-            shuffle=True if split == "train" else False,
+            shuffle=cfg.train.shuffle if split == "train" else False,
             infinite=True,
             num_workers=cfg.compute.cpus_per_gpu,
             rank=rank,

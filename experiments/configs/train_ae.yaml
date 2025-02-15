@@ -10,6 +10,7 @@ train:
   epoch_size: 16384
   batch_size: 64
   accumulation: 1
+  shuffle: "lazy"
 
 fork:
   run: null
@@ -19,7 +20,7 @@ fork:
 
 compute:
   cpus_per_gpu: 8
-  gpus: 4
+  gpus: 8
   ram: "512GB"
   time: "7-00:00:00"
 

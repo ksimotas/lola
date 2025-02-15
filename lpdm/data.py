@@ -298,6 +298,8 @@ def get_dataloader(
         sampler = None
         shuffle = None
     else:
+        assert isinstance(shuffle, bool)
+
         if rank is None:
             sampler = None
         else:
