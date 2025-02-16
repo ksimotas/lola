@@ -76,9 +76,9 @@ class UNetBlock(nn.Module):
 
         if mod_features > 0:
             self.ada_zero = nn.Sequential(
-                nn.Linear(mod_features, max(mod_features, channels)),
+                nn.Linear(mod_features, mod_features),
                 nn.SiLU(),
-                nn.Linear(max(mod_features, channels), 3 * channels),
+                nn.Linear(mod_features, 3 * channels),
                 Rearrange("... (n C) -> n ... C" + " 1" * spatial, n=3),
             )
 

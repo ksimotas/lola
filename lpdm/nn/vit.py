@@ -62,9 +62,9 @@ class ViTBlock(nn.Module):
 
         if mod_features > 0:
             self.ada_zero = nn.Sequential(
-                nn.Linear(mod_features, channels),
+                nn.Linear(mod_features, mod_features),
                 nn.SiLU(),
-                nn.Linear(channels, 4 * channels),
+                nn.Linear(mod_features, 4 * channels),
                 Rearrange("... (n C) -> n ... 1 C", n=4),
             )
 
