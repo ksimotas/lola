@@ -84,7 +84,7 @@ class UNetBlock(nn.Module):
 
             self.ada_zero[-2].weight.data.mul_(1e-2)
         else:
-            self.ada_zero = nn.Parameter(torch.randn(3, channels))
+            self.ada_zero = nn.Parameter(torch.randn(3, channels, *(1,) * spatial))
             self.ada_zero.data.mul_(1e-2)
 
         # Block
