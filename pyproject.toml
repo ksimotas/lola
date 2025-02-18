@@ -23,7 +23,6 @@ all = [
   "ipywidgets==8.1.5",
   "matplotlib==3.9.0",
   "pre-commit==3.8.0",
-  "pytest==8.3.2",
   "ruff==0.6.4",
   "the_well==1.0.0",
   "wandb==0.17.9",
