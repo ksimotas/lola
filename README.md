@@ -30,12 +30,12 @@ cd experiments
 ### Auto-encoders
 
 ```
+python train_ae.py dataset=euler_all optim.learning_rate=1e-5 ae.lat_channels=16
 python train_ae.py dataset=euler_all optim.learning_rate=1e-5 ae.lat_channels=32
 python train_ae.py dataset=euler_all optim.learning_rate=1e-5 ae.lat_channels=64
-python train_ae.py dataset=euler_all optim.learning_rate=1e-5 ae.lat_channels=128
+python train_ae.py dataset=rayleigh_benard optim.learning_rate=1e-5 ae.lat_channels=16
 python train_ae.py dataset=rayleigh_benard optim.learning_rate=1e-5 ae.lat_channels=32
 python train_ae.py dataset=rayleigh_benard optim.learning_rate=1e-5 ae.lat_channels=64
-python train_ae.py dataset=rayleigh_benard optim.learning_rate=1e-5 ae.lat_channels=128
 ```
 
 ```
@@ -48,7 +48,7 @@ python cache_latents.py dataset=rayleigh_benard split=valid run=???
 ### Pixel-space SMs
 
 ```
-python train_sm.py dataset=euler_all optim.learning_rate=1e-5 compute.nodes=4
+python train_sm.py dataset=euler_all optim.learning_rate=1e-5 compute.nodes=2
 python train_sm.py dataset=rayleigh_benard optim.learning_rate=1e-5
 ```
 
@@ -56,7 +56,7 @@ python train_sm.py dataset=rayleigh_benard optim.learning_rate=1e-5
 
 ```
 python train_ldm.py dataset=euler_all ae_run=???
-python train_sdm.py dataset=euler_all ae_run=???
+python train_lsm.py dataset=euler_all ae_run=???
 python train_ldm.py dataset=rayleigh_benard ae_run=???
-python train_sdm.py dataset=rayleigh_benard ae_run=???
+python train_lsm.py dataset=rayleigh_benard ae_run=???
 ```
