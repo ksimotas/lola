@@ -11,11 +11,12 @@ overlap: 1
 samples: 1
 sampling:
   algorithm: "lms"
-  steps: 64
+  steps: 16
 seed: 0
 record: 1
 
 compute:
+  jobs: 1
   cpus: 4
   gpus: 1
   ram: "16GB"
