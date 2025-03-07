@@ -132,8 +132,9 @@ def train(runid: str, cfg: DictConfig):
 
     # Model, optimizer & scheduler
     surrogate = get_surrogate(
-        shape=z.shape[1:],
+        channels=z.shape[1],
         label_features=label.shape[1],
+        spatial=3,
         **cfg.surrogate,
     ).to(device)
 

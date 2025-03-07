@@ -3,7 +3,6 @@ defaults:
   - denoiser: unet_deep
   - denoiser/loss: uniform
   - denoiser/schedule: log_logit
-  - denoiser/precondition: elucidated
   - optim: psgd
   - server: rusty
 

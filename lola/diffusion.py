@@ -10,13 +10,12 @@ import torch
 import torch.nn as nn
 
 from azula.denoise import Gaussian, GaussianDenoiser
-from azula.nn.utils import FlattenWrapper
 from azula.noise import Schedule
 from omegaconf import DictConfig
 from torch import BoolTensor, Tensor
 from torch.distributions import Beta, Distribution, Kumaraswamy, Uniform
 from torch.nn.parallel import DistributedDataParallel
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Tuple
 from zuko.distributions import Maximum
 
 from .nn.embedding import SineEncoding
@@ -73,7 +72,7 @@ class LogLinearSchedule(Schedule):
         return torch.exp(self.log_sigma_min * (1 - t) + self.log_sigma_max * t)
 
     def forward(self, t: Tensor) -> Tuple[Tensor, Tensor]:
-        return self.alpha(t).unsqueeze(-1), self.sigma(t).unsqueeze(-1)
+        return self.alpha(t), self.sigma(t)
 
 
 class LogLogitSchedule(Schedule):
@@ -122,34 +121,7 @@ class LogLogitSchedule(Schedule):
         )
 
     def forward(self, t: Tensor) -> Tuple[Tensor, Tensor]:
-        return self.alpha(t).unsqueeze(-1), self.sigma(t).unsqueeze(-1)
-
-
-class SimpleDenoiser(GaussianDenoiser):
-    r"""Creates a simple Gaussian denoiser.
-
-    Arguments:
-        backbone: A noise conditional network.
-        schedule: A noise schedule.
-    """
-
-    def __init__(self, backbone: nn.Module, schedule: Schedule):
-        super().__init__()
-
-        self.backbone = backbone
-        self.schedule = schedule
-
-    def forward(self, x_t: Tensor, t: Tensor, **kwargs) -> Gaussian:
-        alpha_t, sigma_t = self.schedule(t)
-
-        c_in = torch.rsqrt(alpha_t**2 + sigma_t**2)
-        c_noise = 1e1 * torch.log(sigma_t / alpha_t)
-        c_noise = c_noise.squeeze(dim=-1)
-
-        mean = self.backbone(c_in * x_t, c_noise, **kwargs)
-        var = sigma_t**2 / (alpha_t**2 + sigma_t**2)
-
-        return Gaussian(mean=mean, var=var)
+        return self.alpha(t), self.sigma(t)
 
 
 class ElucidatedDenoiser(GaussianDenoiser):
@@ -169,46 +141,16 @@ class ElucidatedDenoiser(GaussianDenoiser):
     def forward(self, x_t: Tensor, t: Tensor, **kwargs) -> Gaussian:
         alpha_t, sigma_t = self.schedule(t)
 
+        while alpha_t.ndim < x_t.ndim:
+            alpha_t, sigma_t = alpha_t[..., None], sigma_t[..., None]
+
         c_in = torch.rsqrt(alpha_t**2 + sigma_t**2)
-        c_out = sigma_t / torch.sqrt(alpha_t**2 + sigma_t**2)
+        c_out = sigma_t * torch.rsqrt(alpha_t**2 + sigma_t**2)
         c_skip = alpha_t / (alpha_t**2 + sigma_t**2)
-        c_noise = 1e1 * torch.log(sigma_t / alpha_t)
-        c_noise = c_noise.squeeze(dim=-1)
+        c_noise = 1e1 * torch.log(sigma_t / alpha_t).reshape_as(t)
 
         mean = c_skip * x_t + c_out * self.backbone(c_in * x_t, c_noise, **kwargs)
         var = sigma_t**2 / (alpha_t**2 + sigma_t**2)
-
-        return Gaussian(mean=mean, var=var)
-
-
-class AnisotropicDenoiser(GaussianDenoiser):
-    r"""Creates an anisotropic Gaussian denoiser.
-
-    Arguments:
-        backbone: A noise conditional network.
-        schedule: A noise schedule.
-    """
-
-    def __init__(self, backbone: nn.Module, schedule: Schedule):
-        super().__init__()
-
-        self.backbone = backbone
-        self.schedule = schedule
-
-    def forward(self, x_t: Tensor, t: Tensor, **kwargs) -> Gaussian:
-        alpha_t, sigma_t = self.schedule(t)
-
-        c_in = torch.rsqrt(alpha_t**2 + sigma_t**2)
-        c_out = sigma_t / torch.sqrt(alpha_t**2 + sigma_t**2)
-        c_skip = alpha_t / (alpha_t**2 + sigma_t**2)
-        c_noise = 1e1 * torch.log(sigma_t / alpha_t)
-        c_noise = c_noise.squeeze(dim=-1)
-
-        output = self.backbone(c_in * x_t, c_noise, **kwargs)
-        mean, log_var = torch.chunk(output, chunks=2, dim=-1)
-
-        mean = c_skip * x_t + c_out * mean
-        var = sigma_t**2 / (alpha_t**2 + sigma_t**2) * torch.exp(log_var)
 
         return Gaussian(mean=mean, var=var)
 
@@ -314,15 +256,17 @@ class DenoiserLoss(nn.Module):
         else:
             alpha_t, sigma_t = denoiser.schedule(t)
 
+        while alpha_t.ndim < x.ndim:
+            alpha_t, sigma_t = alpha_t[..., None], sigma_t[..., None]
+
         lmbda_t = (alpha_t**2 + sigma_t**2) / sigma_t**2
 
-        x = torch.reshape(x, (B, -1))
         z = torch.randn_like(x)
         x_t = alpha_t * x + sigma_t * z
 
         if mask is not None:
             x_t = torch.where(
-                torch.reshape(mask, (B, -1)),
+                mask,
                 torch.sqrt(alpha_t**2 + sigma_t**2) * x,
                 x_t,
             )
@@ -340,46 +284,37 @@ class DenoiserLoss(nn.Module):
 
 
 def get_denoiser(
-    shape: Sequence[int],
-    label_features: int = 0,
+    channels: int,
     # Arch
     arch: Optional[str] = None,
     emb_features: int = 256,
+    label_features: int = 0,
     # Denoiser
     masked: bool = False,
     schedule: Optional[DictConfig] = None,
-    precondition: Optional[DictConfig] = None,
     # Ignore
-    name: str = None,
-    loss: DictConfig = None,
+    name: Optional[str] = None,
+    loss: Optional[DictConfig] = None,
+    precondition: Optional[DictConfig] = None,
     # Passthrough
     **kwargs,
 ) -> GaussianDenoiser:
     r"""Instantiates a denoiser."""
 
-    channels, *_ = shape
-
-    if getattr(precondition, "name", None) == "anisotropic":
-        out_channels = 2 * channels
-    else:
-        out_channels = channels
-
     if arch in (None, "dit", "vit"):
         backbone = ViT(
             in_channels=channels,
-            out_channels=out_channels,
+            out_channels=channels,
             cond_channels=channels if masked else 0,
             mod_features=emb_features,
-            spatial=len(shape) - 1,
             **kwargs,
         )
     elif arch == "unet":
         backbone = UNet(
             in_channels=channels,
-            out_channels=out_channels,
+            out_channels=channels,
             cond_channels=channels if masked else 0,
             mod_features=emb_features,
-            spatial=len(shape) - 1,
             **kwargs,
         )
     else:
@@ -401,13 +336,10 @@ def get_denoiser(
     else:
         label_embedding = None
 
-    backbone = FlattenWrapper(
-        wrappee=EmbeddingWrapper(
-            backbone=backbone,
-            time_embedding=time_embedding,
-            label_embedding=label_embedding,
-        ),
-        shape=shape,
+    backbone = EmbeddingWrapper(
+        backbone=backbone,
+        time_embedding=time_embedding,
+        label_embedding=label_embedding,
     )
 
     if schedule.name == "log_linear":
@@ -423,13 +355,6 @@ def get_denoiser(
             shift=getattr(schedule, "shift", 0.0),
         )
 
-    if precondition is None:
-        denoiser = ElucidatedDenoiser(backbone, schedule)
-    elif precondition.name == "simple":
-        denoiser = SimpleDenoiser(backbone, schedule)
-    elif precondition.name == "elucidated":
-        denoiser = ElucidatedDenoiser(backbone, schedule)
-    elif precondition.name == "anisotropic":
-        denoiser = AnisotropicDenoiser(backbone, schedule)
+    denoiser = ElucidatedDenoiser(backbone, schedule)
 
     return denoiser

@@ -48,6 +48,7 @@ def evaluate(
         encode_traj,
     )
     from lola.fourier import isotropic_cross_correlation, isotropic_power_spectrum
+    from lola.nn.utils import load_state_dict
     from lola.plot import animate_fields
     from lola.surrogate import get_surrogate
 
@@ -102,29 +103,24 @@ def evaluate(
 
     ## Get the latent shape and compression ratio
     x, label = get_well_inputs(dataset[0], device=device)
-    x = x[start :: cfg.trajectory.stride]
-    x = preprocess(x)
-    x = rearrange(x, "L H W C -> C L H W")
-
-    with torch.no_grad():
-        z = encode_traj(autoencoder, x)
-
-    traj_shape = (z.shape[0], cfg.trajectory.length, *z.shape[2:])
-    compression = x.numel() / z.numel()
 
     # Emulator
     if hasattr(cfg, "denoiser"):
         method = "diffusion"
         denoiser = get_denoiser(
-            shape=traj_shape,
+            channels=cfg.ae.lat_channels,
             label_features=label.numel(),
+            spatial=3,
             masked=True,
             **cfg.denoiser,
         )
 
-        denoiser.load_state_dict(
-            torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device)
+        load_state_dict(
+            denoiser,
+            torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device),
+            translate=[("wrappee.", "")],
         )
+
         denoiser.to(device)
         denoiser.eval()
 
@@ -138,8 +134,9 @@ def evaluate(
     elif hasattr(cfg, "surrogate"):
         method = "surrogate"
         surrogate = get_surrogate(
-            shape=traj_shape,
+            channels=cfg.ae.lat_channels,
             label_features=label.numel(),
+            spatial=3,
             **cfg.surrogate,
         )
 
@@ -175,6 +172,8 @@ def evaluate(
         with torch.no_grad():
             z = encode_traj(autoencoder, x)
             x_ae = decode_traj(autoencoder, z)
+
+        compression = x.numel() / z.numel()
 
         z_hat = emulate_rollout(
             partial(emulate, label=label),

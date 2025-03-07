@@ -8,7 +8,7 @@ __all__ = [
 import torch.nn as nn
 
 from torch import Tensor
-from typing import Optional, Sequence
+from typing import Optional
 
 from .nn.unet import UNet
 from .nn.vit import ViT
@@ -50,11 +50,11 @@ class MaskedSurrogate(nn.Module):
 
 
 def get_surrogate(
-    shape: Sequence[int],
-    label_features: int = 0,
+    channels: int,
     # Arch
     arch: Optional[str] = None,
     emb_features: int = 256,
+    label_features: int = 0,
     # Ignore
     name: str = None,
     # Passthrough
@@ -62,15 +62,12 @@ def get_surrogate(
 ) -> nn.Module:
     r"""Instantiates a surrogate."""
 
-    channels, *_ = shape
-
     if arch in (None, "dit", "vit"):
         backbone = ViT(
             in_channels=channels,
             out_channels=channels,
             cond_channels=channels,
             mod_features=emb_features if label_features > 0 else 0,
-            spatial=len(shape) - 1,
             **kwargs,
         )
     elif arch == "unet":
@@ -79,7 +76,6 @@ def get_surrogate(
             out_channels=channels,
             cond_channels=channels,
             mod_features=emb_features if label_features > 0 else 0,
-            spatial=len(shape) - 1,
             **kwargs,
         )
     else:

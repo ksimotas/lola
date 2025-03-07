@@ -10,7 +10,7 @@ context: 1
 overlap: 1
 samples: 1
 sampling:
-  algorithm: "lms"
+  algorithm: "ab"
   steps: 16
 seed: 0
 record: 1

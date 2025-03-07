@@ -132,8 +132,9 @@ def train(runid: str, cfg: DictConfig):
 
     # Model, optimizer & scheduler
     denoiser = get_denoiser(
-        shape=x.shape[1:],
+        channels=x.shape[1],
         label_features=label.shape[1],
+        spatial=3,
         masked=True,
         **cfg.denoiser,
     ).to(device)

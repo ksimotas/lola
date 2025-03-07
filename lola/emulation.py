@@ -2,7 +2,7 @@ r"""Physics emulation helpers."""
 
 import torch
 
-from azula.sample import DDIMSampler, DDPMSampler, LMSSampler, PCSampler
+from azula.sample import ABSampler, DDIMSampler, DDPMSampler, EABSampler, PCSampler
 from einops import rearrange
 from torch import BoolTensor, Tensor
 from typing import Callable, Optional
@@ -59,7 +59,7 @@ def emulate_diffusion(
     mask: BoolTensor,  # (B, C, L, H, W)
     x_obs: Tensor,  # (B, ...)
     label: Optional[Tensor] = None,
-    algorithm: str = "lms",
+    algorithm: str = "ab",
     steps: int = 64,
     **kwargs,
 ) -> Tensor:
@@ -68,24 +68,27 @@ def emulate_diffusion(
 
     cond_denoiser = MaskedDenoiser(
         denoiser,
-        y=y.flatten(1),
-        mask=mask.flatten(1),
+        y=y,
+        mask=mask,
     )
 
     if algorithm == "ddpm":
         cond_sampler = DDPMSampler(cond_denoiser, steps=steps, **kwargs)
     elif algorithm == "ddim":
         cond_sampler = DDIMSampler(cond_denoiser, steps=steps, **kwargs)
-    elif algorithm == "lms":
-        cond_sampler = LMSSampler(cond_denoiser, steps=steps, **kwargs)
+    elif algorithm == "ab":
+        cond_sampler = ABSampler(cond_denoiser, steps=steps, **kwargs)
+    elif algorithm == "eab":
+        cond_sampler = EABSampler(cond_denoiser, steps=steps, **kwargs)
     elif algorithm == "pc":
-        cond_sampler = PCSampler(cond_denoiser, steps=steps, **kwargs)
+        cond_sampler = PCSampler(cond_denoiser, steps=steps, delta=0.1, **kwargs)
+    else:
+        raise ValueError(f"Unknown algorithm '{algorithm}'.")
 
     cond_sampler = cond_sampler.to(x_obs.device)
 
-    x1 = cond_sampler.init(mask.flatten(1).shape)
+    x1 = cond_sampler.init(mask.shape)
     x0 = cond_sampler(x1, label=label, cond=mask)
-    x0 = x0.reshape(mask.shape)
 
     return x0
 

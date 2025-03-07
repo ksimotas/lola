@@ -138,8 +138,8 @@ def get_autoencoder(
     # Noise
     latent_noise: float = 0.0,
     # Ignore
-    name: str = None,
-    loss: DictConfig = None,
+    name: Optional[str] = None,
+    loss: Optional[DictConfig] = None,
     # Passthrough
     **kwargs,
 ) -> AutoEncoder:
