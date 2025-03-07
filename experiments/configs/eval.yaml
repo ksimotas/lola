@@ -4,20 +4,20 @@ defaults:
 run: ???
 target: "state"
 split: "valid"
-array: 16
+array: 64
 start: 0
 context: 1
 overlap: 1
-samples: 1
+samples: 5
 sampling:
   algorithm: "ab"
   steps: 16
 seed: 0
-record: 1
+record: 2
 
 compute:
   jobs: 1
   cpus: 4
   gpus: 1
   ram: "16GB"
-  time: "01:00:00"
+  time: "06:00:00"

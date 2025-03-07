@@ -6,9 +6,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from IPython.display import Video
+from moviepy import ImageSequenceClip
 from numpy.typing import ArrayLike
 from PIL import Image
-from typing import Optional, Sequence, Tuple
+from tempfile import mkstemp
+from typing import Optional, Sequence, Tuple, Union
 
 from .fourier import isotropic_power_spectrum
 
@@ -21,7 +24,7 @@ def animate_fields(
     timesteps: Optional[Sequence[int]] = None,
     cmap: str = "RdBu_r",
     figsize: Tuple[float, float] = (2.4, 2.4),
-    wait: float = 0.2,
+    fps: float = 4.0,
 ) -> ani.Animation:
     C, L, _, _ = x.shape
 
@@ -112,10 +115,10 @@ def animate_fields(
     fig.align_labels()
     fig.tight_layout()
 
-    return ani.FuncAnimation(fig, animate, frames=L, interval=int(1000 * wait))
+    return ani.FuncAnimation(fig, animate, frames=L, interval=int(1000 / fps))
 
 
-def draw_fields(
+def plot_fields(
     x: ArrayLike,
     y: Optional[ArrayLike] = None,
     tolerance: float = 1.0,
@@ -197,7 +200,7 @@ def draw_fields(
     return fig
 
 
-def draw_psd(
+def plot_psd(
     x: ArrayLike,
     y: Optional[ArrayLike] = None,
     fields: Optional[Sequence[str]] = None,
@@ -247,7 +250,7 @@ def field2rgb(
     x: ArrayLike,
     vmin: Optional[float] = None,
     vmax: Optional[float] = None,
-    cmap: str = "magma",
+    cmap: str = "RdBu_r",
 ) -> ArrayLike:
     if torch.is_tensor(x):
         x = x.numpy(force=True)
@@ -268,9 +271,10 @@ def field2rgb(
     return x
 
 
-def draw_grid(
-    x: ArrayLike,
+def draw(
+    x: ArrayLike,  # (M, N, H, W)
     pad: int = 4,
+    background: str = "black",
     **kwargs,
 ) -> Image.Image:
     x = field2rgb(x, **kwargs)
@@ -286,7 +290,7 @@ def draw_grid(
             N * (W + pad) + pad,
             M * (H + pad) + pad,
         ),
-        color=(255, 255, 255),
+        color=background,
     )
 
     for i in range(M):
@@ -301,20 +305,33 @@ def draw_grid(
     return img
 
 
-def save_gif(
-    x: ArrayLike,
-    file: str,
-    wait: float = 0.2,
+def draw_movie(
+    x: ArrayLike,  # (T, M, N, H, W)
+    file: Optional[str] = None,
+    fps: float = 4.0,
+    display: bool = False,
     **kwargs,
-):
-    x = field2rgb(x, **kwargs)
+) -> Union[str, Video]:
+    if torch.is_tensor(x):
+        x = x.numpy(force=True)
 
-    imgs = [Image.fromarray(img) for img in x]
-    imgs[0].save(
-        file,
-        format="GIF",
-        save_all=True,
-        append_images=imgs[1:],
-        duration=int(1000 * wait),
-        loop=0,
-    )
+    kwargs.setdefault("vmin", np.quantile(x, 0.01) - 1e-2)
+    kwargs.setdefault("vmax", np.quantile(x, 0.99) + 1e-2)
+
+    imgs = [draw(xi, **kwargs) for i, xi in enumerate(x)]
+    imgs = [np.asarray(img) for img in imgs]
+
+    clip = ImageSequenceClip(imgs, fps=fps)
+
+    if file is None:
+        _, file = mkstemp(suffix=".mp4")
+
+    if str(file).endswith(".gif"):
+        clip.write_gif(file, loop=0, logger=None)
+    else:
+        clip.write_videofile(file, codec="libx264", logger=None)
+
+    if display:
+        return Video(file, embed=True)
+    else:
+        return file

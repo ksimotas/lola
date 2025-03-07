@@ -26,7 +26,6 @@ def evaluate(
     record: int = 1,
     **ignore,
 ):
-    import matplotlib.pyplot as plt
     import torch
     import torch.nn as nn
 
@@ -49,7 +48,7 @@ def evaluate(
     )
     from lola.fourier import isotropic_cross_correlation, isotropic_power_spectrum
     from lola.nn.utils import load_state_dict
-    from lola.plot import animate_fields
+    from lola.plot import draw_movie
     from lola.surrogate import get_surrogate
 
     device = torch.device("cuda")
@@ -255,21 +254,20 @@ def evaluate(
                 f.writelines(lines)
 
         # Video
-        plt.rcParams["animation.ffmpeg_path"] = "/mnt/sw/nix/store/fz8y69w4c97lcgv1wwk03bd4yh4zank7-ffmpeg-full-6.0-bin/bin/ffmpeg"  # fmt: off
-
         if x.shape[-1] < x.shape[-2]:
             x, x_hat = x.mT, x_hat.mT
 
-        for i in range(min(samples, record)):
-            animation = animate_fields(
-                x,
-                x_hat[i],
-                fields=cfg.dataset.fields,
-                figsize=(x.shape[-1] / 64, x.shape[-2] / 64),
-            )
-            animation.save(
-                outdir
-                / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{seed}_{context}_{overlap}_{i:03d}.mp4"
+        if record > 0:
+            frames = torch.stack((x, *x_hat[:record]))
+            frames = rearrange(frames, "N C L H W -> L N C H W")
+
+            draw_movie(
+                frames,
+                file=(
+                    outdir
+                    / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{context}_{overlap}_{seed}.mp4"
+                ),
+                fps=4.0 / cfg.trajectory.stride,
             )
 
 
