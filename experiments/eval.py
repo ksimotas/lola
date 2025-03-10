@@ -50,6 +50,7 @@ def evaluate(
     from lola.nn.utils import load_state_dict
     from lola.plot import draw_movie
     from lola.surrogate import get_surrogate
+    from lola.utils import randseed
 
     device = torch.device("cuda")
 
@@ -163,7 +164,7 @@ def evaluate(
         if isinstance(index, float):
             index = int(index * len(dataset))
 
-        _ = torch.manual_seed(seed + 101 * index + start)
+        _ = torch.manual_seed(randseed(f"{seed},{index},{start}"))
 
         x, label = get_well_inputs(dataset[index], device=device)
         x = x[start :: cfg.trajectory.stride]
@@ -183,7 +184,7 @@ def evaluate(
             rollout=z.shape[1],
             context=context,
             overlap=overlap,
-            batch=samples,
+            batch=1 if method == "surrogate" else samples,
         )
 
         with torch.no_grad():
@@ -204,7 +205,9 @@ def evaluate(
 
                     # Spread
                     if samples > 1:
-                        spread = torch.sqrt(torch.mean(torch.square(v - torch.mean(v, dim=0))))
+                        # see https://doi.org/10.1175/JHM-D-14-0008.1
+                        spread = torch.mean(torch.square(v - torch.mean(v, dim=0)))
+                        spread = torch.sqrt((samples + 1) / (samples - 1) * spread)
                     else:
                         spread = 0.0
 
