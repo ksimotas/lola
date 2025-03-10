@@ -106,6 +106,7 @@ def evaluate(
     # Emulator
     if hasattr(cfg, "denoiser"):
         method = "diffusion"
+        settings = f"{sampling.algorithm}{sampling.steps}"
         denoiser = get_denoiser(
             channels=cfg.ae.lat_channels,
             label_features=label.numel(),
@@ -132,6 +133,7 @@ def evaluate(
         )
     elif hasattr(cfg, "surrogate"):
         method = "surrogate"
+        settings = None
         surrogate = get_surrogate(
             channels=cfg.ae.lat_channels,
             label_features=label.numel(),
@@ -237,7 +239,7 @@ def evaluate(
                         rmsre_f.append(torch.sqrt(torch.mean(sre_c[mask])))
 
                     # Write
-                    line = f"{runname},{target},{method},{compression},"
+                    line = f"{runname},{target},{method},{settings},{compression},"
                     line += f"{split},{index},{start},{seed},{(context - 1) * cfg.trajectory.stride + 1},{overlap},{auto_encoded},{field},{(t - context) * cfg.trajectory.stride},"
                     line += f"{spread},{rmse},{nrmse},{vrmse},"
                     line += ",".join(map(format, (*rmsre_f, *label.tolist())))
@@ -265,7 +267,7 @@ def evaluate(
                 frames,
                 file=(
                     outdir
-                    / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{context}_{overlap}_{seed}.mp4"
+                    / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{context}_{overlap}_{settings}_{seed}.mp4"
                 ),
                 fps=4.0 / cfg.trajectory.stride,
             )
