@@ -265,7 +265,7 @@ def field2rgb(
     x = (x - vmin) / (vmax - vmin)
     x = np.clip(x, a_min=0.0, a_max=1.0)
     x = palette(x)
-    x = 256 * x[..., :3]
+    x = 255 * x[..., :3]
     x = x.astype(np.uint8)
 
     return x
