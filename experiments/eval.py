@@ -129,7 +129,7 @@ def evaluate(
         denoiser.requires_grad_(False)
         denoiser.eval()
 
-        emulate = lambda mask, z_obs, label: emulate_diffusion(
+        emulate = lambda mask, z_obs, i, label: emulate_diffusion(
             denoiser,
             mask,
             z_obs,
@@ -152,7 +152,7 @@ def evaluate(
         surrogate.to(device)
         surrogate.eval()
 
-        emulate = lambda mask, z_obs, label: emulate_surrogate(
+        emulate = lambda mask, z_obs, i, label: emulate_surrogate(
             surrogate,
             mask,
             z_obs,

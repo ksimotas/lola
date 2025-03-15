@@ -15,7 +15,7 @@ from omegaconf import DictConfig
 from torch import BoolTensor, Tensor
 from torch.distributions import Beta, Distribution, Kumaraswamy, Uniform
 from torch.nn.parallel import DistributedDataParallel
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 from .nn.embedding import SineEncoding
 from .nn.unet import UNet
@@ -355,3 +355,59 @@ def get_denoiser(
     denoiser = ElucidatedDenoiser(backbone, schedule)
 
     return denoiser
+
+
+class GuidedDenoiser(GaussianDenoiser):
+    r"""Creates a guided denoiser module.
+
+    References:
+        | Score-based Data Assimiliation (Rozet et al., 2023)
+        | https://arxiv.org/abs/2306.10574
+
+    Arguments:
+        denoiser: A Gaussian denoiser.
+        y: An observation :math:`y \sim \mathcal{N}(A(x), \Sigma_y)`, with shape :math:`(*, D)`.
+        A: The forward operator :math:`x \mapsto A(x)`.
+        var_y: The noise variance :math:`\Sigma_y`.
+        gamma: A coefficient :math:`\gamma \approx \diag(A A^\top)`.
+    """
+
+    def __init__(
+        self,
+        denoiser: GaussianDenoiser,
+        y: Tensor,
+        A: Callable[[Tensor], Tensor],
+        var_y: Tensor,
+        gamma: Tensor = 1.0,
+    ):
+        super().__init__()
+
+        self.denoiser = denoiser
+        self.A = A
+        self.register_buffer("y", torch.as_tensor(y))
+        self.register_buffer("var_y", torch.as_tensor(var_y))
+        self.register_buffer("gamma", torch.as_tensor(gamma))
+
+    @property
+    def schedule(self) -> Schedule:
+        return self.denoiser.schedule
+
+    def forward(self, x_t: Tensor, t: Tensor, **kwargs) -> Gaussian:
+        alpha_t, sigma_t = self.schedule(t)
+
+        with torch.enable_grad():
+            x_t = x_t.detach().requires_grad_()
+            q = self.denoiser(x_t, t, **kwargs)
+
+            x_hat = q.mean
+            y_hat = self.A(x_hat)
+
+            log_p = (self.y - y_hat) ** 2 / (self.var_y + self.gamma * q.var.detach())
+            log_p = -1 / 2 * log_p.sum()
+
+        (grad,) = torch.autograd.grad(log_p, x_t)
+
+        return Gaussian(
+            mean=x_hat + sigma_t**2 / alpha_t * grad,
+            var=q.var,
+        )

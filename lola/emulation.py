@@ -119,7 +119,12 @@ def emulate_rollout(
     trajectory = []
 
     while len(trajectory) < rollout:
-        x_hat = emulate(mask, x_obs)
+        if trajectory:
+            i = len(trajectory) - overlap
+        else:
+            i = 0
+
+        x_hat = emulate(mask, x_obs, i=i)
 
         if trajectory:
             trajectory.extend(x_hat[:, :, overlap:].unbind(dim=2))
