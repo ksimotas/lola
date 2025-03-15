@@ -16,7 +16,6 @@ from torch import BoolTensor, Tensor
 from torch.distributions import Beta, Distribution, Kumaraswamy, Uniform
 from torch.nn.parallel import DistributedDataParallel
 from typing import Optional, Tuple
-from zuko.distributions import Maximum
 
 from .nn.embedding import SineEncoding
 from .nn.unet import UNet
@@ -219,8 +218,6 @@ class DenoiserLoss(nn.Module):
             return Beta(self.a, self.b)
         elif self.distribution == "kumaraswamy":
             return Kumaraswamy(self.a, self.b)
-        elif self.distribution == "triangle":
-            return Maximum(Uniform(self.a, self.b), n=2)
         else:
             raise ValueError(f"unknown distribution {self.distribution}")
 
