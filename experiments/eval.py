@@ -82,6 +82,8 @@ def evaluate(
     # Autoencoder
     if (runpath / "autoencoder").exists():
         cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml").ae
+        cfg.ae.latent_noise = 0.0
+
         state = torch.load(
             runpath / "autoencoder/state.pth", weights_only=True, map_location=device
         )
@@ -93,6 +95,7 @@ def evaluate(
 
         autoencoder.load_state_dict(state)
         autoencoder.to(device)
+        autoencoder.requires_grad_(False)
         autoencoder.eval()
 
         del state
@@ -123,6 +126,7 @@ def evaluate(
         )
 
         denoiser.to(device)
+        denoiser.requires_grad_(False)
         denoiser.eval()
 
         emulate = lambda mask, z_obs, label: emulate_diffusion(
