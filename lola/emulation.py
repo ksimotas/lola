@@ -60,7 +60,6 @@ def emulate_diffusion(
     x_obs: Tensor,  # (B, ...)
     label: Optional[Tensor] = None,
     algorithm: str = "ab",
-    steps: int = 64,
     **kwargs,
 ) -> Tensor:
     y = torch.zeros(mask.shape, dtype=x_obs.dtype, device=x_obs.device)
@@ -73,15 +72,15 @@ def emulate_diffusion(
     )
 
     if algorithm == "ddpm":
-        cond_sampler = DDPMSampler(cond_denoiser, steps=steps, **kwargs)
+        cond_sampler = DDPMSampler(cond_denoiser, **kwargs)
     elif algorithm == "ddim":
-        cond_sampler = DDIMSampler(cond_denoiser, steps=steps, **kwargs)
+        cond_sampler = DDIMSampler(cond_denoiser, **kwargs)
     elif algorithm == "ab":
-        cond_sampler = ABSampler(cond_denoiser, steps=steps, **kwargs)
+        cond_sampler = ABSampler(cond_denoiser, **kwargs)
     elif algorithm == "eab":
-        cond_sampler = EABSampler(cond_denoiser, steps=steps, **kwargs)
+        cond_sampler = EABSampler(cond_denoiser, **kwargs)
     elif algorithm == "pc":
-        cond_sampler = PCSampler(cond_denoiser, steps=steps, delta=0.1, **kwargs)
+        cond_sampler = PCSampler(cond_denoiser, **kwargs)
     else:
         raise ValueError(f"Unknown algorithm '{algorithm}'.")
 
