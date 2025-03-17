@@ -186,7 +186,13 @@ class SelfAttentionNd(nn.MultiheadAttention):
         """
 
         y = rearrange(x, "B C ...  -> B (...) C")
-        y, _ = super().forward(y, y, y, average_attn_weights=False)
+
+        qkv = torch.nn.functional.linear(y, self.in_proj_weight, self.in_proj_bias)
+        q, k, v = rearrange(qkv, "B L (n H C) -> n B H L C", n=3, H=self.num_heads)
+        y = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout)
+        y = rearrange(y, "B H L C -> B L (H C)")
+        y = torch.nn.functional.linear(y, self.out_proj.weight, self.out_proj.bias)
+
         y = rearrange(y, "B L C -> B C L").reshape(x.shape)
 
         return y
