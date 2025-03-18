@@ -13,6 +13,7 @@ samples: 5
 sampling:
   algorithm: "ab"
   steps: 16
+mixed_precision: true
 seed: 0
 record: 2
 

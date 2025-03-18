@@ -23,6 +23,7 @@ def evaluate(
     crop: Optional[int] = None,
     samples: int = 1,
     sampling: Dict[str, Any] = {},  # noqa: B006
+    mixed_precision: bool = False,
     seed: Optional[int] = None,
     record: int = 1,
     **ignore,
@@ -184,16 +185,17 @@ def evaluate(
 
         compression = x.numel() / z.numel()
 
-        z_hat = emulate_rollout(
-            partial(emulate, label=label),
-            z,
-            window=cfg.trajectory.length,
-            rollout=z.shape[1],
-            context=context,
-            overlap=overlap,
-            crop=crop,
-            batch=1 if method == "surrogate" else samples,
-        )
+        with torch.autocast(device_type="cuda", enabled=mixed_precision):
+            z_hat = emulate_rollout(
+                partial(emulate, label=label),
+                z,
+                window=cfg.trajectory.length,
+                rollout=z.shape[1],
+                context=context,
+                overlap=overlap,
+                crop=crop,
+                batch=1 if method == "surrogate" else samples,
+            )
 
         with torch.no_grad():
             x_hat = decode_traj(autoencoder, z_hat, batched=True)
