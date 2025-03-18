@@ -20,6 +20,7 @@ def evaluate(
     start: int = 0,
     context: int = 1,
     overlap: int = 1,
+    crop: Optional[int] = None,
     samples: int = 1,
     sampling: Dict[str, Any] = {},  # noqa: B006
     seed: Optional[int] = None,
@@ -164,6 +165,8 @@ def evaluate(
         seed = torch.initial_seed()
 
     # Evaluation
+    crop = cfg.trajectory.length if crop is None else crop
+
     for index in tqdm(indices, ncols=88, ascii=True):
         if isinstance(index, float):
             index = int(index * len(dataset))
@@ -188,6 +191,7 @@ def evaluate(
             rollout=z.shape[1],
             context=context,
             overlap=overlap,
+            crop=crop,
             batch=1 if method == "surrogate" else samples,
         )
 
@@ -247,7 +251,7 @@ def evaluate(
 
                     # Write
                     line = f"{runname},{target},{method},{settings},{compression},"
-                    line += f"{split},{index},{start},{seed},{(context - 1) * cfg.trajectory.stride + 1},{overlap},{auto_encoded},{field},{(t - context) * cfg.trajectory.stride},"
+                    line += f"{split},{index},{start},{seed},{(context - 1) * cfg.trajectory.stride + 1},{overlap},{crop},{auto_encoded},{field},{(t - context) * cfg.trajectory.stride},"
                     line += f"{spread},{rmse},{nrmse},{vrmse},"
                     line += ",".join(map(format, (*rmsre_f, *label.tolist())))
                     line += "\n"
@@ -274,7 +278,7 @@ def evaluate(
                 frames,
                 file=(
                     outdir
-                    / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{context}_{overlap}_{settings}_{seed}.mp4"
+                    / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{context}_{overlap}_{crop}_{settings}_{seed}.mp4"
                 ),
                 fps=4.0 / cfg.trajectory.stride,
             )

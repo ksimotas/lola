@@ -100,11 +100,16 @@ def emulate_rollout(
     rollout: int,
     context: int = 1,
     overlap: int = 1,
+    crop: Optional[int] = None,
     batch: Optional[int] = None,
 ) -> Tensor:  # (B, C, L, H, W)
+    if crop is None:
+        crop = window
+
     assert context > 0
     assert overlap > 0
     assert window > context and window > overlap
+    assert crop > context and crop > overlap
 
     if batch is None:
         x = x.expand(1, *x.shape)
@@ -125,6 +130,7 @@ def emulate_rollout(
             i = 0
 
         x_hat = emulate(mask, x_obs, i=i)
+        x_hat = x_hat[:, :, :crop]
 
         if trajectory:
             trajectory.extend(x_hat[:, :, overlap:].unbind(dim=2))
