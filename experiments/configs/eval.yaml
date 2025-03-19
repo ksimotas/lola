@@ -10,6 +10,7 @@ context: 1
 overlap: 1
 crop: null
 samples: 5
+filtering: null
 sampling:
   algorithm: "ab"
   steps: 16
