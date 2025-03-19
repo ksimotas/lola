@@ -131,6 +131,7 @@ def emulate_rollout(
 
         x_hat = emulate(mask, x_obs, i=i)
         x_hat = x_hat[:, :, :crop]
+        x_hat = x_hat.to(dtype=x.dtype)
 
         if trajectory:
             trajectory.extend(x_hat[:, :, overlap:].unbind(dim=2))
