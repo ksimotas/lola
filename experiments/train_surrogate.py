@@ -12,6 +12,7 @@ from lola.hydra import compose
 
 def train(runid: str, cfg: DictConfig):
     import os
+    import re
     import torch
     import torch.distributed as dist
     import wandb
@@ -23,7 +24,9 @@ def train(runid: str, cfg: DictConfig):
     from tqdm import trange
 
     from lola.data import (
+        MiniWellDataset,
         field_preprocess,
+        find_hdf5,
         get_dataloader,
         get_well_inputs,
         get_well_multi_dataset,
@@ -51,11 +54,21 @@ def train(runid: str, cfg: DictConfig):
     assert cfg.valid.epoch_size % cfg.valid.batch_size == 0
     assert cfg.valid.batch_size % world_size == 0
 
-    runname = f"{runid}_{cfg.dataset.name}_{cfg.surrogate.name}"
+    if cfg.ae_run:
+        space = re.search(r"f\d+c\d+", cfg.ae_run).group()
+    else:
+        space = "pixel"
+
+    runname = f"{runid}_{cfg.dataset.name}_{space}_{cfg.surrogate.name}"
 
     runpath = Path(f"{cfg.server.storage}/runs/sm/{runname}")
     runpath = runpath.expanduser().resolve()
     runpath.mkdir(parents=True, exist_ok=True)
+
+    if rank == 0 and cfg.ae_run:
+        os.symlink(os.path.realpath(cfg.ae_run, strict=True), runpath / "autoencoder")
+
+    dist.barrier(device_ids=[device_id])
 
     with open_dict(cfg):
         cfg.name = runname
@@ -88,19 +101,41 @@ def train(runid: str, cfg: DictConfig):
         }
 
     # Data
-    dataset = {
-        split: get_well_multi_dataset(
-            path=cfg.server.datasets,
-            physics=cfg.dataset.physics,
-            split=split,
-            steps=cfg.trajectory.length,
-            min_dt_stride=cfg.trajectory.stride,
-            max_dt_stride=cfg.trajectory.stride,
-            include_filters=cfg.dataset.include_filters,
-            augment=cfg.dataset.augment,
-        )
-        for split in ("train", "valid")
-    }
+    if cfg.ae_run:
+        files = {
+            split: [
+                file
+                for physic in cfg.dataset.physics
+                for file in find_hdf5(
+                    path=runpath / "autoencoder/cache" / physic / split,
+                    include_filters=cfg.dataset.include_filters,
+                )
+            ]
+            for split in ("train", "valid")
+        }
+
+        dataset = {
+            split: MiniWellDataset.from_files(
+                files=files[split],
+                steps=cfg.trajectory.length,
+                stride=cfg.trajectory.stride,
+            )
+            for split in ("train", "valid")
+        }
+    else:
+        dataset = {
+            split: get_well_multi_dataset(
+                path=cfg.server.datasets,
+                physics=cfg.dataset.physics,
+                split=split,
+                steps=cfg.trajectory.length,
+                min_dt_stride=cfg.trajectory.stride,
+                max_dt_stride=cfg.trajectory.stride,
+                include_filters=cfg.dataset.include_filters,
+                augment=cfg.dataset.augment,
+            )
+            for split in ("train", "valid")
+        }
 
     train_loader, valid_loader = [
         get_dataloader(
@@ -120,12 +155,15 @@ def train(runid: str, cfg: DictConfig):
         for split in ("train", "valid")
     ]
 
-    preprocess = partial(
-        field_preprocess,
-        mean=torch.as_tensor(cfg.dataset.stats.mean, device=device),
-        std=torch.as_tensor(cfg.dataset.stats.std, device=device),
-        transform=cfg.dataset.transform,
-    )
+    if cfg.ae_run:
+        preprocess = lambda x: x
+    else:
+        preprocess = partial(
+            field_preprocess,
+            mean=torch.as_tensor(cfg.dataset.stats.mean, device=device),
+            std=torch.as_tensor(cfg.dataset.stats.std, device=device),
+            transform=cfg.dataset.transform,
+        )
 
     x, label = get_well_inputs(next(valid_loader))
     x = rearrange(x, "B L H W C -> B C L H W")
@@ -313,7 +351,7 @@ if __name__ == "__main__":
 
     # Config
     cfg = compose(
-        config_file="./configs/train_sm.yaml",
+        config_file="./configs/train_surrogate.yaml",
         overrides=args.overrides,
     )
 

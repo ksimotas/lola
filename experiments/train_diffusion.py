@@ -12,6 +12,7 @@ from lola.hydra import compose
 
 def train(runid: str, cfg: DictConfig):
     import os
+    import re
     import torch
     import torch.distributed as dist
     import wandb
@@ -22,7 +23,14 @@ def train(runid: str, cfg: DictConfig):
     from torch.nn.parallel import DistributedDataParallel
     from tqdm import trange
 
-    from lola.data import MiniWellDataset, find_hdf5, get_dataloader, get_well_inputs
+    from lola.data import (
+        MiniWellDataset,
+        field_preprocess,
+        find_hdf5,
+        get_dataloader,
+        get_well_inputs,
+        get_well_multi_dataset,
+    )
     from lola.diffusion import DenoiserLoss, get_denoiser
     from lola.emulation import random_context_mask
     from lola.nn.utils import load_state_dict
@@ -46,13 +54,18 @@ def train(runid: str, cfg: DictConfig):
     assert cfg.valid.epoch_size % cfg.valid.batch_size == 0
     assert cfg.valid.batch_size % world_size == 0
 
-    runname = f"{runid}_{cfg.dataset.name}_{cfg.denoiser.name}"
+    if cfg.ae_run:
+        space = re.search(r"f\d+c\d+", cfg.ae_run).group()
+    else:
+        space = "pixel"
 
-    runpath = Path(f"{cfg.server.storage}/runs/ldm/{runname}")
+    runname = f"{runid}_{cfg.dataset.name}_{space}_{cfg.denoiser.name}"
+
+    runpath = Path(f"{cfg.server.storage}/runs/dm/{runname}")
     runpath = runpath.expanduser().resolve()
     runpath.mkdir(parents=True, exist_ok=True)
 
-    if rank == 0:
+    if rank == 0 and cfg.ae_run:
         os.symlink(os.path.realpath(cfg.ae_run, strict=True), runpath / "autoencoder")
 
     dist.barrier(device_ids=[device_id])
@@ -75,7 +88,7 @@ def train(runid: str, cfg: DictConfig):
     else:
         stem = wandb.Api().run(path=cfg.fork.run)
         stem_name = Path(stem.config["path"]).name
-        stem_path = Path(f"{cfg.server.storage}/runs/ldm/{stem_name}")
+        stem_path = Path(f"{cfg.server.storage}/runs/dm/{stem_name}")
         stem_path = stem_path.expanduser().resolve()
         stem_state = torch.load(
             stem_path / f"{cfg.fork.target}.pth", weights_only=True, map_location=device
@@ -88,26 +101,41 @@ def train(runid: str, cfg: DictConfig):
         }
 
     # Data
-    files = {
-        split: [
-            file
-            for physic in cfg.dataset.physics
-            for file in find_hdf5(
-                path=runpath / "autoencoder/cache" / physic / split,
-                include_filters=cfg.dataset.include_filters,
-            )
-        ]
-        for split in ("train", "valid")
-    }
+    if cfg.ae_run:
+        files = {
+            split: [
+                file
+                for physic in cfg.dataset.physics
+                for file in find_hdf5(
+                    path=runpath / "autoencoder/cache" / physic / split,
+                    include_filters=cfg.dataset.include_filters,
+                )
+            ]
+            for split in ("train", "valid")
+        }
 
-    dataset = {
-        split: MiniWellDataset.from_files(
-            files=files[split],
-            steps=cfg.trajectory.length,
-            stride=cfg.trajectory.stride,
-        )
-        for split in ("train", "valid")
-    }
+        dataset = {
+            split: MiniWellDataset.from_files(
+                files=files[split],
+                steps=cfg.trajectory.length,
+                stride=cfg.trajectory.stride,
+            )
+            for split in ("train", "valid")
+        }
+    else:
+        dataset = {
+            split: get_well_multi_dataset(
+                path=cfg.server.datasets,
+                physics=cfg.dataset.physics,
+                split=split,
+                steps=cfg.trajectory.length,
+                min_dt_stride=cfg.trajectory.stride,
+                max_dt_stride=cfg.trajectory.stride,
+                include_filters=cfg.dataset.include_filters,
+                augment=cfg.dataset.augment,
+            )
+            for split in ("train", "valid")
+        }
 
     train_loader, valid_loader = [
         get_dataloader(
@@ -127,12 +155,22 @@ def train(runid: str, cfg: DictConfig):
         for split in ("train", "valid")
     ]
 
-    z, label = get_well_inputs(next(valid_loader))
-    z = rearrange(z, "B L H W C -> B C L H W")
+    if cfg.ae_run:
+        preprocess = lambda x: x
+    else:
+        preprocess = partial(
+            field_preprocess,
+            mean=torch.as_tensor(cfg.dataset.stats.mean, device=device),
+            std=torch.as_tensor(cfg.dataset.stats.std, device=device),
+            transform=cfg.dataset.transform,
+        )
+
+    x, label = get_well_inputs(next(valid_loader))
+    x = rearrange(x, "B L H W C -> B C L H W")
 
     # Model, optimizer & scheduler
     denoiser = get_denoiser(
-        channels=z.shape[1],
+        channels=x.shape[1],
         label_features=label.shape[1],
         spatial=3,
         masked=True,
@@ -160,7 +198,7 @@ def train(runid: str, cfg: DictConfig):
     if rank == 0:
         run = wandb.init(
             entity=cfg.wandb.entity,
-            project="lola-ldm",
+            project="lola-dm",
             id=runid,
             name=runname,
             config=OmegaConf.to_container(cfg),
@@ -181,13 +219,14 @@ def train(runid: str, cfg: DictConfig):
         losses, grads = [], []
 
         for i in range(cfg.train.epoch_size // cfg.train.batch_size):
-            z, label = get_well_inputs(next(train_loader), device=device)
-            z = rearrange(z, "B L H W C -> B C L H W")
+            x, label = get_well_inputs(next(train_loader), device=device)
+            x = preprocess(x)
+            x = rearrange(x, "B L H W C -> B C L H W")
 
-            mask = random_context_mask(z, **cfg.trajectory.context)
+            mask = random_context_mask(x, **cfg.trajectory.context)
 
             if (i + 1) % cfg.train.accumulation == 0:
-                loss = denoiser_loss(denoiser, z, mask=mask, label=label)
+                loss = denoiser_loss(denoiser, x, mask=mask, label=label)
                 loss_acc = loss / cfg.train.accumulation
                 loss_acc.backward()
 
@@ -198,7 +237,7 @@ def train(runid: str, cfg: DictConfig):
                 counter["update_steps"] += 1
             else:
                 with denoiser.no_sync():
-                    loss = denoiser_loss(denoiser, z, mask=mask, label=label)
+                    loss = denoiser_loss(denoiser, x, mask=mask, label=label)
                     loss_acc = loss / cfg.train.accumulation
                     loss_acc.backward()
 
@@ -239,12 +278,13 @@ def train(runid: str, cfg: DictConfig):
 
         with torch.no_grad():
             for _ in range(cfg.valid.epoch_size // cfg.valid.batch_size):
-                z, label = get_well_inputs(next(valid_loader), device=device)
-                z = rearrange(z, "B L H W C -> B C L H W")
+                x, label = get_well_inputs(next(valid_loader), device=device)
+                x = preprocess(x)
+                x = rearrange(x, "B L H W C -> B C L H W")
 
-                mask = random_context_mask(z, **cfg.trajectory.context)
+                mask = random_context_mask(x, **cfg.trajectory.context)
 
-                loss = denoiser_loss(denoiser, z, mask=mask, label=label)
+                loss = denoiser_loss(denoiser, x, mask=mask, label=label)
                 losses.append(loss)
 
         losses = torch.stack(losses)
@@ -308,17 +348,23 @@ if __name__ == "__main__":
 
     # Config
     cfg = compose(
-        config_file="./configs/train_ldm.yaml",
+        config_file="./configs/train_diffusion.yaml",
         overrides=args.overrides,
     )
 
     # Job
     runid = wandb.util.generate_id()
 
+    if cfg.compute.nodes > 1:
+        interpreter = f"torchrun --nnodes {cfg.compute.nodes} --nproc-per-node {cfg.compute.gpus} --rdzv_backend=c10d --rdzv_endpoint=$SLURMD_NODENAME:12345 --rdzv_id=$SLURM_JOB_ID"
+    else:
+        interpreter = f"torchrun --nnodes 1 --nproc-per-node {cfg.compute.gpus} --standalone"
+
     dawgz.schedule(
         dawgz.job(
             f=partial(train, runid, cfg),
-            name=f"ldm {runid}",
+            name=f"dm {runid}",
+            nodes=cfg.compute.nodes,
             cpus=cfg.compute.cpus_per_gpu * cfg.compute.gpus,
             gpus=cfg.compute.gpus,
             ram=cfg.compute.ram,
@@ -327,9 +373,9 @@ if __name__ == "__main__":
             constraint=cfg.server.constraint,
             exclude=cfg.server.exclude,
         ),
-        name=f"training ldm {runid}",
+        name=f"training dm {runid}",
         backend="slurm",
-        interpreter=f"torchrun --nnodes 1 --nproc-per-node {cfg.compute.gpus} --standalone",
+        interpreter=interpreter,
         env=[
             "export OMP_NUM_THREADS=" + f"{cfg.compute.cpus_per_gpu}",
             "export WANDB_SILENT=true",

@@ -1,8 +1,10 @@
 defaults:
   - dataset: euler_all
-  - surrogate: unet_deep
+  - surrogate: vit_large
   - optim: psgd
   - server: rusty
+
+ae_run: null
 
 trajectory:
   length: 5
