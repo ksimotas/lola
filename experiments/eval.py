@@ -49,7 +49,6 @@ def evaluate(
         encode_traj,
     )
     from lola.fourier import isotropic_cross_correlation, isotropic_power_spectrum
-    from lola.nn.utils import load_state_dict
     from lola.plot import draw_movie
     from lola.surrogate import get_surrogate
     from lola.utils import randseed
@@ -111,8 +110,6 @@ def evaluate(
 
     # Emulator
     if hasattr(cfg, "denoiser"):
-        method = "diffusion"
-        settings = f"{sampling.algorithm}{sampling.steps}"
         denoiser = get_denoiser(
             channels=cfg.ae.lat_channels,
             label_features=label.numel(),
@@ -121,26 +118,13 @@ def evaluate(
             **cfg.denoiser,
         )
 
-        load_state_dict(
-            denoiser,
+        denoiser.load_state_dict(
             torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device),
-            translate=[("wrappee.", "")],
         )
-
         denoiser.to(device)
         denoiser.requires_grad_(False)
         denoiser.eval()
-
-        emulate = lambda mask, z_obs, i, label: emulate_diffusion(
-            denoiser,
-            mask,
-            z_obs,
-            label=label,
-            **sampling,
-        )
     elif hasattr(cfg, "surrogate"):
-        method = "surrogate"
-        settings = None
         surrogate = get_surrogate(
             channels=cfg.ae.lat_channels,
             label_features=label.numel(),
@@ -153,13 +137,6 @@ def evaluate(
         )
         surrogate.to(device)
         surrogate.eval()
-
-        emulate = lambda mask, z_obs, i, label: emulate_surrogate(
-            surrogate,
-            mask,
-            z_obs,
-            label=label,
-        )
 
     # RNG
     if seed is None:
@@ -185,9 +162,30 @@ def evaluate(
 
         compression = x.numel() / z.numel()
 
+        ## Emulate
+        if hasattr(cfg, "denoiser"):
+            method = "diffusion"
+            settings = f"{sampling.algorithm}{sampling.steps}"
+            emulate = lambda mask, z_obs, i: emulate_diffusion(
+                denoiser,
+                mask,
+                z_obs,
+                label=label,  # noqa: B023
+                **sampling,
+            )
+        elif hasattr(cfg, "surrogate"):
+            method = "surrogate"
+            settings = None
+            emulate = lambda mask, z_obs, i: emulate_surrogate(
+                surrogate,
+                mask,
+                z_obs,
+                label=label,  # noqa: B023
+            )
+
         with torch.autocast(device_type="cuda", enabled=mixed_precision):
             z_hat = emulate_rollout(
-                partial(emulate, label=label),
+                emulate,
                 z,
                 window=cfg.trajectory.length,
                 rollout=z.shape[1],
