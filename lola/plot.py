@@ -332,6 +332,6 @@ def draw_movie(
         clip.write_videofile(file, codec="libx264", logger=None)
 
     if display:
-        return Video(file, embed=True)
+        return Video(file, embed=True, width=1280)
     else:
         return file
