@@ -32,6 +32,7 @@ def evaluate(
     import torch
     import torch.nn as nn
 
+    from azula import MMPSDenoiser
     from einops import rearrange, reduce
     from filelock import FileLock
     from functools import partial
@@ -41,7 +42,7 @@ def evaluate(
 
     from lola.autoencoder import get_autoencoder
     from lola.data import field_preprocess, get_well_inputs, get_well_multi_dataset
-    from lola.diffusion import GuidedDenoiser, get_denoiser
+    from lola.diffusion import get_denoiser
     from lola.emulation import (
         decode_traj,
         emulate_diffusion,
@@ -177,6 +178,12 @@ def evaluate(
                     **sampling,
                 )
             else:
+                # fmt: off
+                def D(z):
+                    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
+                        return decode_traj(autoencoder, z, batched=True)
+                # fmt: on
+
                 if filtering == "subsample":
                     A = lambda x: x[..., ::32, ::32]
                 elif filtering == "downsample":
@@ -184,16 +191,17 @@ def evaluate(
                 else:
                     raise ValueError(f"unknown operator '{filtering}'")
 
-                D = lambda z: decode_traj(autoencoder, z, batched=True)
-
                 var_y = torch.tensor(1e-4, device=device)
 
                 def emulate(mask, z_obs, i):
+                    j = overlap if i > 0 else context
+                    k = min(cfg.trajectory.length, x.shape[1] - i)  # noqa: B023
+
                     return emulate_diffusion(
-                        GuidedDenoiser(
+                        MMPSDenoiser(
                             denoiser,
-                            y=A(x[:, i : i + cfg.trajectory.length]),  # noqa: B023
-                            A=lambda z: A(D(z[..., : x.shape[1] - i, :, :])),  # noqa: B023
+                            y=A(x[..., i + j : i + k, :, :]),  # noqa: B023
+                            A=lambda z: A(D(z[..., j:k, :, :])),  # noqa: B023
                             var_y=var_y,  # noqa: B023
                         ),
                         mask,
