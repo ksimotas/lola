@@ -189,7 +189,12 @@ class MaskedDenoiser(GaussianDenoiser):
             x_t,
         )
 
-        return self.denoiser(x_t, t, **kwargs)
+        q = self.denoiser(x_t, t, **kwargs)
+
+        return Gaussian(
+            mean=torch.where(self.mask, self.y, q.mean),
+            var=q.var,
+        )
 
 
 class DenoiserLoss(nn.Module):
