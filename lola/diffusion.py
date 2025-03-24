@@ -246,7 +246,7 @@ class DenoiserLoss(nn.Module):
             where :math:`t \sim Beta(a, b)` and :math:`x_t \sim p(X_t \mid x)`.
         """
 
-        B, *shape = x.shape
+        B, *_ = x.shape
 
         if mask is not None:
             mask = kwargs.setdefault("cond", mask.expand(x.shape).contiguous())
@@ -273,7 +273,7 @@ class DenoiserLoss(nn.Module):
                 x_t,
             )
 
-        q = denoiser(x_t, t, shape=shape, **kwargs)
+        q = denoiser(x_t, t, **kwargs)
 
         l_mean = ((q.mean - x).square() / q.var.detach()).mean()
 
