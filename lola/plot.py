@@ -310,6 +310,7 @@ def draw_movie(
     file: Optional[str] = None,
     fps: float = 4.0,
     display: bool = False,
+    embed: bool = False,
     **kwargs,
 ) -> Union[str, Video]:
     if torch.is_tensor(x):
@@ -332,6 +333,6 @@ def draw_movie(
         clip.write_videofile(file, codec="libx264", logger=None)
 
     if display:
-        return Video(file, embed=True, width=1280)
+        return Video(file, embed=embed, width=1280)
     else:
         return file
