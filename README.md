@@ -48,8 +48,8 @@ python cache_latents.py dataset=rayleigh_benard split=valid run=???
 ### Pixel-space SMs
 
 ```
-python train_surrogate.py dataset=euler_all optim.learning_rate=1e-5 compute.nodes=2
-python train_surrogate.py dataset=rayleigh_benard optim.learning_rate=1e-5
+python train_surrogate.py dataset=euler_all surrogate=vit_pixel compute.nodes=2
+python train_surrogate.py dataset=rayleigh_benard surrogate=vit_pixel
 ```
 
 ### Latent-space DMs and SMs
