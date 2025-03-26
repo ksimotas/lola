@@ -103,7 +103,7 @@ def train(runid: str, cfg: DictConfig):
                 if split == "train"
                 else cfg.valid.batch_size // world_size
             ),
-            shuffle=cfg.train.shuffle if split == "train" else False,
+            shuffle=True if split == "train" else False,
             infinite=True,
             num_workers=cfg.compute.cpus_per_gpu,
             rank=rank,

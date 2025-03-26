@@ -10,7 +10,6 @@ train:
   epoch_size: 16384
   batch_size: 64
   accumulation: 1
-  shuffle: "lazy"
 
 valid:
   epoch_size: 4096
