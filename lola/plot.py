@@ -276,7 +276,7 @@ def field2rgb(
 
 def draw(
     x: ArrayLike,  # (M, N, H, W)
-    pad: int = 4,
+    pad: int = 16,
     background: str = "white",
     isolate: Sequence[int] = (),
     **kwargs,
