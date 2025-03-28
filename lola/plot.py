@@ -275,8 +275,17 @@ def draw(
     x: ArrayLike,  # (M, N, H, W)
     pad: int = 4,
     background: str = "black",
+    isolate: Sequence[int] = (),
     **kwargs,
 ) -> Image.Image:
+    if torch.is_tensor(x):
+        x = x.numpy(force=True)
+
+    axes = tuple(i for i in range(x.ndim) if i not in isolate)
+
+    kwargs.setdefault("vmin", np.quantile(x, 0.01, axis=axes, keepdims=True) - 1e-2)
+    kwargs.setdefault("vmax", np.quantile(x, 0.99, axis=axes, keepdims=True) + 1e-2)
+
     x = field2rgb(x, **kwargs)
 
     while x.ndim < 5:
@@ -311,13 +320,16 @@ def draw_movie(
     fps: float = 4.0,
     display: bool = False,
     embed: bool = False,
+    isolate: Sequence[int] = (),
     **kwargs,
 ) -> Union[str, Video]:
     if torch.is_tensor(x):
         x = x.numpy(force=True)
 
-    kwargs.setdefault("vmin", np.quantile(x, 0.01) - 1e-2)
-    kwargs.setdefault("vmax", np.quantile(x, 0.99) + 1e-2)
+    axes = tuple(i for i in range(x.ndim) if i not in isolate)
+
+    kwargs.setdefault("vmin", np.quantile(x, 0.01, axis=axes, keepdims=True).squeeze(0) - 1e-2)
+    kwargs.setdefault("vmax", np.quantile(x, 0.99, axis=axes, keepdims=True).squeeze(0) + 1e-2)
 
     imgs = [draw(xi, **kwargs) for i, xi in enumerate(x)]
     imgs = [np.asarray(img) for img in imgs]

@@ -331,6 +331,7 @@ def evaluate(
                     / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{context}_{overlap}_{settings}_{filtering}_{seed}.mp4"
                 ),
                 fps=4.0 / cfg.trajectory.stride,
+                isolate={2},
             )
 
 
