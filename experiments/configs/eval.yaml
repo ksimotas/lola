@@ -8,7 +8,6 @@ array: 64
 start: 0
 context: 1
 overlap: 1
-crop: null
 samples: 5
 filtering: null
 sampling:

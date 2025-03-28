@@ -20,7 +20,6 @@ def evaluate(
     start: int = 0,
     context: int = 1,
     overlap: int = 1,
-    crop: Optional[int] = None,
     samples: int = 1,
     filtering: Optional[str] = None,
     sampling: Dict[str, Any] = {},  # noqa: B006
@@ -41,7 +40,12 @@ def evaluate(
     from tqdm import tqdm
 
     from lola.autoencoder import get_autoencoder
-    from lola.data import field_preprocess, get_well_inputs, get_well_multi_dataset
+    from lola.data import (
+        field_postprocess,
+        field_preprocess,
+        get_well_inputs,
+        get_well_multi_dataset,
+    )
     from lola.diffusion import get_denoiser
     from lola.emulation import (
         decode_traj,
@@ -77,6 +81,13 @@ def evaluate(
 
     preprocess = partial(
         field_preprocess,
+        mean=torch.as_tensor(cfg.dataset.stats.mean, device=device),
+        std=torch.as_tensor(cfg.dataset.stats.std, device=device),
+        transform=cfg.dataset.transform,
+    )
+
+    postprocess = partial(
+        field_postprocess,
         mean=torch.as_tensor(cfg.dataset.stats.mean, device=device),
         std=torch.as_tensor(cfg.dataset.stats.std, device=device),
         transform=cfg.dataset.transform,
@@ -145,8 +156,6 @@ def evaluate(
         seed = torch.initial_seed()
 
     # Evaluation
-    crop = cfg.trajectory.length if crop is None else crop
-
     for index in tqdm(indices, ncols=88, ascii=True):
         if isinstance(index, float):
             index = int(index * len(dataset))
@@ -228,7 +237,6 @@ def evaluate(
                 rollout=z.shape[1],
                 context=context,
                 overlap=overlap,
-                crop=crop,
                 batch=1 if method == "surrogate" else samples,
             )
 
@@ -236,6 +244,11 @@ def evaluate(
             x_hat = decode_traj(autoencoder, z_hat, batched=True)
 
         del z_hat
+
+        ## Postprocess
+        x = postprocess(x, dim=-4)
+        x_ae = postprocess(x_ae, dim=-4)
+        x_hat = postprocess(x_hat, dim=-4)
 
         ## Stats
         lines = []
@@ -288,7 +301,7 @@ def evaluate(
 
                     # Write
                     line = f"{runname},{target},{method},{settings},{filtering},{compression},"
-                    line += f"{split},{index},{start},{seed},{(context - 1) * cfg.trajectory.stride + 1},{overlap},{crop},{auto_encoded},{field},{(t - context) * cfg.trajectory.stride},"
+                    line += f"{split},{index},{start},{seed},{(context - 1) * cfg.trajectory.stride + 1},{overlap},{auto_encoded},{field},{(t - context) * cfg.trajectory.stride},"
                     line += f"{spread},{rmse},{nrmse},{vrmse},"
                     line += ",".join(map(format, (*rmsre_f, *label.tolist())))
                     line += "\n"
@@ -315,7 +328,7 @@ def evaluate(
                 frames,
                 file=(
                     outdir
-                    / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{context}_{overlap}_{crop}_{settings}_{filtering}_{seed}.mp4"
+                    / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{context}_{overlap}_{settings}_{filtering}_{seed}.mp4"
                 ),
                 fps=4.0 / cfg.trajectory.stride,
             )

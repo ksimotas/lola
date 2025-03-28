@@ -40,6 +40,7 @@ def field_preprocess(
     mean: Optional[Tensor] = None,
     std: Optional[Tensor] = None,
     transform: Dict[int, str] = {},  # noqa: B006
+    dim: int = -1,
 ) -> Tensor:
     r"""Pre-processes the physical fields of a state.
 
@@ -48,10 +49,13 @@ def field_preprocess(
         mean: The fields mean, with shape :math:`(C)`.
         std: The field standard deviation, with shape :math:`(C)`.
         transform: Optional (non-linear) transformations to apply to each field.
+        dim: The channel dimension.
 
     Returns:
         The pre-processed state tensor, with shape :math:`(*, C)`.
     """
+
+    x = x.movedim(dim, -1)
 
     for i, key in transform.items():
         t, _ = TRANSFORMS[key]
@@ -63,6 +67,8 @@ def field_preprocess(
     if std is not None:
         x = x / std.to(x)
 
+    x = x.movedim(-1, dim)
+
     return x
 
 
@@ -71,6 +77,7 @@ def field_postprocess(
     mean: Optional[Tensor] = None,
     std: Optional[Tensor] = None,
     transform: Dict[int, str] = {},  # noqa: B006
+    dim: int = -1,
 ) -> Tensor:
     r"""Post-processes the physical fields of a state.
 
@@ -81,10 +88,13 @@ def field_postprocess(
         mean: The fields mean, with shape :math:`(C)`.
         std: The field standard deviation, with shape :math:`(C)`.
         transform: Optional (non-linear) transformations to apply to each field.
+        dim: The channel dimension.
 
     Returns:
         The post-processed state tensor, with shape :math:`(*, C)`.
     """
+
+    x = x.movedim(dim, -1)
 
     if std is not None:
         x = x * std.to(x)
@@ -95,6 +105,8 @@ def field_postprocess(
     for i, key in transform.items():
         _, t_inv = TRANSFORMS[key]
         x[..., i] = t_inv(x[..., i])
+
+    x = x.movedim(-1, dim)
 
     return x
 
