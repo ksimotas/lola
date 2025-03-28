@@ -25,6 +25,7 @@ all = [
   "moviepy==2.1.2",
   "pre-commit==3.8.0",
   "ruff==0.6.4",
+  "seaborn==0.13.2",
   "the_well==1.0.0",
   "wandb==0.17.9",
 ]

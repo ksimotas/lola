@@ -4,6 +4,7 @@ import math
 import matplotlib.animation as ani
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sb
 import torch
 
 from IPython.display import Video
@@ -251,16 +252,18 @@ def field2rgb(
     vmin: Optional[float] = None,
     vmax: Optional[float] = None,
     cmap: str = "RdBu_r",
+    bad: str = "whitesmoke",
 ) -> ArrayLike:
     if torch.is_tensor(x):
         x = x.numpy(force=True)
 
     if vmin is None:
-        vmin = np.quantile(x, 0.01) - 1e-2
+        vmin = np.nanquantile(x, 0.01) - 1e-2
     if vmax is None:
-        vmax = np.quantile(x, 0.99) + 1e-2
+        vmax = np.nanquantile(x, 0.99) + 1e-2
 
-    palette = plt.get_cmap(cmap)
+    palette = sb.color_palette(cmap, as_cmap=True)
+    palette.set_bad(bad)
 
     x = (x - vmin) / (vmax - vmin)
     x = np.clip(x, a_min=0.0, a_max=1.0)
@@ -274,7 +277,7 @@ def field2rgb(
 def draw(
     x: ArrayLike,  # (M, N, H, W)
     pad: int = 4,
-    background: str = "black",
+    background: str = "white",
     isolate: Sequence[int] = (),
     **kwargs,
 ) -> Image.Image:
@@ -283,8 +286,8 @@ def draw(
 
     axes = tuple(i for i in range(x.ndim) if i not in isolate)
 
-    kwargs.setdefault("vmin", np.quantile(x, 0.01, axis=axes, keepdims=True) - 1e-2)
-    kwargs.setdefault("vmax", np.quantile(x, 0.99, axis=axes, keepdims=True) + 1e-2)
+    kwargs.setdefault("vmin", np.nanquantile(x, 0.01, axis=axes, keepdims=True) - 1e-2)
+    kwargs.setdefault("vmax", np.nanquantile(x, 0.99, axis=axes, keepdims=True) + 1e-2)
 
     x = field2rgb(x, **kwargs)
 
@@ -328,8 +331,8 @@ def draw_movie(
 
     axes = tuple(i for i in range(x.ndim) if i not in isolate)
 
-    kwargs.setdefault("vmin", np.quantile(x, 0.01, axis=axes, keepdims=True).squeeze(0) - 1e-2)
-    kwargs.setdefault("vmax", np.quantile(x, 0.99, axis=axes, keepdims=True).squeeze(0) + 1e-2)
+    kwargs.setdefault("vmin", np.nanquantile(x, 0.01, axis=axes, keepdims=True).squeeze(0) - 1e-2)
+    kwargs.setdefault("vmax", np.nanquantile(x, 0.99, axis=axes, keepdims=True).squeeze(0) + 1e-2)
 
     imgs = [draw(xi, **kwargs) for i, xi in enumerate(x)]
     imgs = [np.asarray(img) for img in imgs]
