@@ -276,6 +276,14 @@ def evaluate(
                     nrmse = torch.sqrt(mse / torch.mean(u**2))
                     vrmse = torch.sqrt(mse / torch.var(u))
 
+                    # Invariants
+                    invariants = []
+
+                    total_u = u.sum()
+                    total_v = v.sum()
+
+                    invariants.append(1 - total_v / total_u)
+
                     # Fourier
                     p_u, k = isotropic_power_spectrum(u, spatial=2)
                     p_v, _ = isotropic_power_spectrum(v, spatial=2)
@@ -303,7 +311,7 @@ def evaluate(
                     line = f"{runname},{target},{method},{settings},{filtering},{compression},"
                     line += f"{split},{index},{start},{seed},{context},{overlap},{auto_encoded},{field},{(t - context) * cfg.trajectory.stride},"
                     line += f"{spread},{rmse},{nrmse},{vrmse},"
-                    line += ",".join(map(format, (*rmsre_f, *label.tolist())))
+                    line += ",".join(map(format, (*invariants, *rmsre_f, *label.tolist())))
                     line += "\n"
 
                     lines.append(line)
