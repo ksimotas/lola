@@ -1,0 +1,50 @@
+#!/usr/bin/bash
+
+runs=(
+    "/mnt/ceph/users/frozet/lola/runs/dm/otocl205_euler_all_f32c4_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/dm/oy7s3wfq_euler_all_f32c16_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/dm/6mnf6vle_euler_all_f32c32_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/dm/e7xzovde_euler_all_f32c64_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/dm/cyqmbfjb_rayleigh_benard_f32c4_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/dm/667t8kzm_rayleigh_benard_f32c16_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/dm/zt8nzq37_rayleigh_benard_f32c32_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/dm/0fqjt3js_rayleigh_benard_f32c64_vit_large"
+    "/mnt/ceph/users/rohana/lola/runs/sm/a3hc2as6_euler_all_f32c4_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/sm/95zfkk6w_euler_all_f32c16_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/sm/9a2wk0hd_euler_all_f32c32_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/sm/s259b4l6_euler_all_f32c64_vit_large"
+    "/mnt/ceph/users/rohana/lola/runs/sm/chua0k42_rayleigh_benard_f32c4_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/sm/xp1prkdo_rayleigh_benard_f32c16_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/sm/fa6jeugp_rayleigh_benard_f32c32_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/sm/lrg1qgi2_rayleigh_benard_f32c64_vit_large"
+)
+
+contexts=(1 2)
+
+for run in "${runs[@]}"
+do
+    if [[ $run = *"rayleigh_benard"* ]]
+    then
+        starts=(0 16)
+    else
+        starts=(0)
+    fi
+
+    if [[ $run = *"/dm/"* ]]
+    then
+        filters=("null" "subsample")
+    else
+        filters=("null")
+    fi
+
+    for start in "${starts[@]}"
+    do
+        for context in "${contexts[@]}"
+        do
+            for filter in "${filters[@]}"
+            do
+                python eval.py run=$run start=$start context=$context overlap=$context filtering=$filter
+            done
+        done
+    done
+done
