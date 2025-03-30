@@ -301,7 +301,7 @@ def evaluate(
 
                     # Write
                     line = f"{runname},{target},{method},{settings},{filtering},{compression},"
-                    line += f"{split},{index},{start},{seed},{(context - 1) * cfg.trajectory.stride + 1},{overlap},{auto_encoded},{field},{(t - context) * cfg.trajectory.stride},"
+                    line += f"{split},{index},{start},{seed},{context},{overlap},{auto_encoded},{field},{(t - context) * cfg.trajectory.stride},"
                     line += f"{spread},{rmse},{nrmse},{vrmse},"
                     line += ",".join(map(format, (*rmsre_f, *label.tolist())))
                     line += "\n"
