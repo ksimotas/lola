@@ -31,7 +31,7 @@ def evaluate(
     import torch
     import torch.nn as nn
 
-    from azula import MMPSDenoiser
+    from azula.guidance import MMPSDenoiser
     from einops import rearrange, reduce
     from filelock import FileLock
     from functools import partial
