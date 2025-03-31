@@ -318,7 +318,7 @@ def evaluate(
 
         outdir = Path(f"{server.storage}/results/{cfg.dataset.name}")
         outdir = outdir.expanduser().resolve()
-        outdir.mkdir(parents=True, exist_ok=True)
+        (outdir / runname).mkdir(parents=True, exist_ok=True)
 
         with FileLock(outdir / "stats.csv.lock"):
             with open(outdir / "stats.csv", mode="a") as f:
@@ -336,6 +336,7 @@ def evaluate(
                 frames,
                 file=(
                     outdir
+                    / runname
                     / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{context}_{overlap}_{settings}_{filtering}_{seed}.mp4"
                 ),
                 fps=4.0 / cfg.trajectory.stride,
