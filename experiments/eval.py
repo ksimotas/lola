@@ -28,6 +28,7 @@ def evaluate(
     record: int = 1,
     **ignore,
 ):
+    import time
     import torch
     import torch.nn as nn
 
@@ -229,6 +230,8 @@ def evaluate(
                 label=label,  # noqa: B023
             )
 
+        tic = time.time()
+
         with torch.autocast(device_type="cuda", enabled=mixed_precision):
             z_hat = emulate_rollout(
                 emulate,
@@ -237,13 +240,18 @@ def evaluate(
                 rollout=z.shape[1],
                 context=context,
                 overlap=overlap,
-                batch=1 if method == "surrogate" else samples,
+                batch=samples,
             )
 
         with torch.no_grad():
             x_hat = decode_traj(autoencoder, z_hat, batched=True)
 
+        tac = time.time()
+
         del z_hat
+
+        ## Speed
+        speed = (tac - tic) / (x_hat.shape[0] * x_hat.shape[1])
 
         ## Postprocess
         x = postprocess(x, dim=-4)
@@ -308,7 +316,7 @@ def evaluate(
                         rmsre_f.append(torch.sqrt(torch.mean(sre_c[mask])))
 
                     # Write
-                    line = f"{runname},{target},{method},{settings},{filtering},{compression},"
+                    line = f"{runname},{target},{compression},{method},{settings},{filtering},{speed},"
                     line += f"{split},{index},{start},{seed},{context},{overlap},{auto_encoded},{field},{(t - context) * cfg.trajectory.stride},"
                     line += f"{spread},{rmse},{nrmse},{vrmse},"
                     line += ",".join(map(format, (*invariants, *rmsre_f, *label.tolist())))
