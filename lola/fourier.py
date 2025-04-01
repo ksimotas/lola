@@ -66,7 +66,7 @@ def isotropic_power_spectrum(x: Tensor, spatial: int = 2) -> Tuple[Tensor, Tenso
     edges, counts, indices = isotropic_binning(shape, device=x.device)
 
     # Power spectrum
-    s = torch.fft.fftn(x, dim=tuple(range(-spatial, 0)))
+    s = torch.fft.fftn(x, dim=tuple(range(-spatial, 0)), norm="ortho")
     p = torch.square(torch.abs(s))
     p = torch.flatten(p, start_dim=-spatial)
 
@@ -99,8 +99,8 @@ def isotropic_cross_correlation(x: Tensor, y: Tensor, spatial: int = 2) -> Tuple
     edges, counts, indices = isotropic_binning(shape, device=x.device)
 
     # Cross-correlation
-    sx = torch.fft.fftn(x, dim=tuple(range(-spatial, 0)))
-    sy = torch.fft.fftn(y, dim=tuple(range(-spatial, 0)))
+    sx = torch.fft.fftn(x, dim=tuple(range(-spatial, 0)), norm="ortho")
+    sy = torch.fft.fftn(y, dim=tuple(range(-spatial, 0)), norm="ortho")
 
     c = torch.abs(sx * torch.conj(sy))
     c = torch.flatten(c, start_dim=-spatial)

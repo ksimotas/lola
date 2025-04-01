@@ -291,8 +291,8 @@ def evaluate(
                     c_uv, _ = isotropic_cross_correlation(u, v, spatial=2)
                     c_uv = torch.mean(c_uv, dim=0)
 
-                    sre_p = torch.square(1 - p_v / p_u)
-                    sre_c = torch.square(1 - c_uv / torch.sqrt(p_u * p_v))
+                    sre_p = torch.square(1 - (p_v + 1e-6) / (p_u + 1e-6))
+                    sre_c = torch.square(1 - (c_uv + 1e-6) / torch.sqrt(p_u * p_v + 1e-12))
 
                     rmsre_f = []
 
