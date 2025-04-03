@@ -293,7 +293,7 @@ def evaluate(
                     invariants = []
 
                     total_u = u.sum()
-                    total_v = v.sum()
+                    total_v = v.mean(dim=0).sum()
 
                     invariants.append(1 - total_v / total_u)
 
