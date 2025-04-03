@@ -304,10 +304,10 @@ def evaluate(
                     c_uv, _ = isotropic_cross_correlation(u, v, spatial=2)
                     c_uv = torch.mean(c_uv, dim=0)
 
-                    sre_p = torch.square(1 - (p_v + 1e-6) / (p_u + 1e-6))
-                    sre_c = torch.square(1 - (c_uv + 1e-6) / torch.sqrt(p_u * p_v + 1e-12))
+                    se_p = torch.square(1 - (p_v + 1e-6) / (p_u + 1e-6))
+                    se_c = torch.square(1 - (c_uv + 1e-6) / torch.sqrt(p_u * p_v + 1e-12))
 
-                    rmsre_f = []
+                    rmse_f = []
 
                     bins = torch.logspace(k[0].log2(), -1.0, steps=4, base=2)
 
@@ -317,14 +317,16 @@ def evaluate(
                         else:
                             mask = bins[i] <= k
 
-                        rmsre_f.append(torch.sqrt(torch.mean(sre_p[mask])))
-                        rmsre_f.append(torch.sqrt(torch.mean(sre_c[mask])))
+                        rmse_f.append(torch.sqrt(torch.mean(se_p[mask])))
+                        rmse_f.append(torch.sqrt(torch.mean(se_c[mask])))
 
                     # Write
                     line = f"{runname},{target},{compression},{method},{settings},{filtering},{speed},"
-                    line += f"{split},{index},{start},{seed},{context},{overlap},{auto_encoded},{field},{(t - context + 1) * cfg.trajectory.stride},"
+                    line += f"{split},{index},{start},{seed},"
+                    line += f"{context},{overlap},{auto_encoded},"
+                    line += f"{field},{(t - context + 1) * cfg.trajectory.stride},"
                     line += f"{spread},{rmse},{nrmse},{vrmse},"
-                    line += ",".join(map(format, (*invariants, *rmsre_f, *label.tolist())))
+                    line += ",".join(map(format, (*invariants, *rmse_f, *label.tolist())))
                     line += "\n"
 
                     lines.append(line)
