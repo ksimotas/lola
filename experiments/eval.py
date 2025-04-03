@@ -157,10 +157,11 @@ def evaluate(
         seed = torch.initial_seed()
 
     # Evaluation
-    for index in tqdm(indices, ncols=88, ascii=True):
-        if isinstance(index, float):
-            index = int(index * len(dataset))
+    indices = {
+        int(index * len(dataset)) if isinstance(index, float) else index for index in indices
+    }
 
+    for index in tqdm(indices, ncols=88, ascii=True):
         _ = torch.manual_seed(randseed(f"{seed},{index},{start}"))
 
         x, label = get_well_inputs(dataset[index], device=device)
