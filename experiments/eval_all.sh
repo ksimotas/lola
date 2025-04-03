@@ -19,20 +19,18 @@ runs=(
     "/mnt/ceph/users/frozet/lola/runs/sm/lrg1qgi2_rayleigh_benard_f32c64_vit_large"
 )
 
-contexts=(1 2)
-
 for run in "${runs[@]}"
 do
     if [[ $run = *"rayleigh_benard"* ]]
     then
-        starts=(0 16)
+        starts=(4 16 64)
     else
         starts=(0)
     fi
 
     for start in "${starts[@]}"
     do
-        for context in "${contexts[@]}"
+        for context in $(seq 1 3)
         do
             python eval.py run=$run start=$start context=$context overlap=$context
         done

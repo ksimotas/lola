@@ -15,7 +15,7 @@ sampling:
   steps: 16
 mixed_precision: true
 seed: 0
-record: 2
+record: 0
 
 compute:
   jobs: 1

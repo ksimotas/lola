@@ -25,7 +25,7 @@ def evaluate(
     sampling: Dict[str, Any] = {},  # noqa: B006
     mixed_precision: bool = False,
     seed: Optional[int] = None,
-    record: int = 1,
+    record: int = 0,
     **ignore,
 ):
     import time
