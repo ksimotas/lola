@@ -114,18 +114,22 @@ def evaluate(
         autoencoder.eval()
 
         del state
+
+        lat_channels = cfg.ae.lat_channels
     else:
         autoencoder = nn.Module()
         autoencoder.encode = nn.Identity()
         autoencoder.decode = nn.Identity()
 
+        lat_channels = dataset.metadata.n_fields
+
     ## Get the latent shape and compression ratio
-    x, label = get_well_inputs(dataset[0], device=device)
+    _, label = get_well_inputs(dataset[0], device=device)
 
     # Emulator
     if hasattr(cfg, "denoiser"):
         denoiser = get_denoiser(
-            channels=cfg.ae.lat_channels,
+            channels=lat_channels,
             label_features=label.numel(),
             spatial=3,
             masked=True,
@@ -140,7 +144,7 @@ def evaluate(
         denoiser.eval()
     elif hasattr(cfg, "surrogate"):
         surrogate = get_surrogate(
-            channels=cfg.ae.lat_channels,
+            channels=lat_channels,
             label_features=label.numel(),
             spatial=3,
             **cfg.surrogate,

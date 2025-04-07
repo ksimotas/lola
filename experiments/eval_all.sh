@@ -17,6 +17,8 @@ runs=(
     "/mnt/ceph/users/frozet/lola/runs/sm/xp1prkdo_rayleigh_benard_f32c16_vit_large"
     "/mnt/ceph/users/frozet/lola/runs/sm/fa6jeugp_rayleigh_benard_f32c32_vit_large"
     "/mnt/ceph/users/frozet/lola/runs/sm/lrg1qgi2_rayleigh_benard_f32c64_vit_large"
+    "/mnt/ceph/users/frozet/lola/runs/sm/1y8qrgee_euler_all_pixel_vit_pixel"
+    "/mnt/ceph/users/frozet/lola/runs/sm/ses7lyf5_rayleigh_benard_pixel_vit_pixel"
 )
 
 for run in "${runs[@]}"
