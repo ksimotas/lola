@@ -30,21 +30,11 @@ do
         starts=(0)
     fi
 
-    if [[ $run = *"/dm/"* ]]
-    then
-        filters=("null" "subsample")
-    else
-        filters=("null")
-    fi
-
     for start in "${starts[@]}"
     do
         for context in "${contexts[@]}"
         do
-            for filter in "${filters[@]}"
-            do
-                python eval.py run=$run start=$start context=$context overlap=$context filtering=$filter
-            done
+            python eval.py run=$run start=$start context=$context overlap=$context
         done
     done
 done

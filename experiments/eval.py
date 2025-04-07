@@ -201,18 +201,22 @@ def evaluate(
                 else:
                     raise ValueError(f"unknown operator '{filtering}'")
 
-                var_y = torch.tensor(1e-4, device=device)
+                y = A(x)
+                y = y + 1e-1 * torch.randn_like(y)
+                var_y = torch.tensor(1e-2, device=device)
 
                 def emulate(mask, z_obs, i):
                     j = overlap if i > 0 else context
-                    k = min(cfg.trajectory.length, x.shape[1] - i)  # noqa: B023
+                    y_i = y[..., i + j : i + cfg.trajectory.length, :, :]  # noqa: B023
+                    A_i = lambda z: A(D(z[..., j : j + len(y_i), :, :]))  # noqa: B023
 
                     return emulate_diffusion(
                         MMPSDenoiser(
                             denoiser,
-                            y=A(x[..., i + j : i + k, :, :]),  # noqa: B023
-                            A=lambda z: A(D(z[..., j:k, :, :])),  # noqa: B023
+                            y=y_i,
+                            A=A_i,
                             var_y=var_y,  # noqa: B023
+                            iterations=1,
                         ),
                         mask,
                         z_obs,
