@@ -75,9 +75,6 @@ def train(runid: str, cfg: DictConfig):
         cfg.path = str(runpath)
         cfg.seed = randseed(runid)
 
-    if rank == 0:
-        OmegaConf.save(cfg, runpath / "config.yaml")
-
     # Stem
     if cfg.fork.run is None:
         counter = {
@@ -169,12 +166,12 @@ def train(runid: str, cfg: DictConfig):
     x = rearrange(x, "B L H W C -> B C L H W")
 
     # Model, optimizer & scheduler
-    surrogate = get_surrogate(
-        channels=x.shape[1],
-        label_features=label.shape[1],
-        spatial=3,
-        **cfg.surrogate,
-    ).to(device)
+    with open_dict(cfg):
+        cfg.surrogate.channels = x.shape[1]
+        cfg.surrogate.label_features = label.shape[1]
+        cfg.surrogate.spatial = 3
+
+    surrogate = get_surrogate(**cfg.surrogate).to(device)
 
     if cfg.fork.run is not None:
         load_state_dict(surrogate, stem_state, strict=cfg.fork.strict)
@@ -192,6 +189,9 @@ def train(runid: str, cfg: DictConfig):
     )
 
     # W&B
+    if rank == 0:
+        OmegaConf.save(cfg, runpath / "config.yaml")
+
     if rank == 0:
         run = wandb.init(
             entity=cfg.wandb.entity,

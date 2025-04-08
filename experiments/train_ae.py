@@ -57,9 +57,6 @@ def train(runid: str, cfg: DictConfig):
         cfg.path = str(runpath)
         cfg.seed = randseed(runid)
 
-    if rank == 0:
-        OmegaConf.save(cfg, runpath / "config.yaml")
-
     # Stem
     if cfg.fork.run is None:
         counter = {
@@ -121,11 +118,10 @@ def train(runid: str, cfg: DictConfig):
     )
 
     # Model, optimizer & scheduler
-    autoencoder = get_autoencoder(
-        pix_channels=dataset["train"].metadata.n_fields,
-        **cfg.ae,
-    ).to(device)
+    with open_dict(cfg):
+        cfg.ae.pix_channels = len(cfg.dataset.fields)
 
+    autoencoder = get_autoencoder(**cfg.ae).to(device)
     autoencoder_loss = AutoEncoderLoss(**cfg.ae.loss).to(device)
 
     if cfg.fork.run is not None:
@@ -149,6 +145,9 @@ def train(runid: str, cfg: DictConfig):
     )
 
     # W&B
+    if rank == 0:
+        OmegaConf.save(cfg, runpath / "config.yaml")
+
     if rank == 0:
         run = wandb.init(
             entity=cfg.wandb.entity,

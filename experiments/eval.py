@@ -103,58 +103,34 @@ def evaluate(
             runpath / "autoencoder/state.pth", weights_only=True, map_location=device
         )
 
-        autoencoder = get_autoencoder(
-            pix_channels=dataset.metadata.n_fields,
-            **cfg.ae,
-        )
-
+        autoencoder = get_autoencoder(**cfg.ae)
         autoencoder.load_state_dict(state)
         autoencoder.to(device)
         autoencoder.requires_grad_(False)
         autoencoder.eval()
 
         del state
-
-        lat_channels = cfg.ae.lat_channels
     else:
         autoencoder = nn.Module()
         autoencoder.encode = nn.Identity()
         autoencoder.decode = nn.Identity()
 
-        lat_channels = dataset.metadata.n_fields
-
-    ## Get the latent shape and compression ratio
-    _, label = get_well_inputs(dataset[0], device=device)
-
     # Emulator
-    if hasattr(cfg, "denoiser"):
-        denoiser = get_denoiser(
-            channels=lat_channels,
-            label_features=label.numel(),
-            spatial=3,
-            masked=True,
-            **cfg.denoiser,
-        )
+    state = torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device)
 
-        denoiser.load_state_dict(
-            torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device),
-        )
+    if hasattr(cfg, "denoiser"):
+        denoiser = get_denoiser(**cfg.denoiser)
+        denoiser.load_state_dict(state)
         denoiser.to(device)
         denoiser.requires_grad_(False)
         denoiser.eval()
     elif hasattr(cfg, "surrogate"):
-        surrogate = get_surrogate(
-            channels=lat_channels,
-            label_features=label.numel(),
-            spatial=3,
-            **cfg.surrogate,
-        )
-
-        surrogate.load_state_dict(
-            torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device)
-        )
+        surrogate = get_surrogate(**cfg.surrogate)
+        surrogate.load_state_dict(state)
         surrogate.to(device)
         surrogate.eval()
+
+    del state
 
     # RNG
     if seed is None:

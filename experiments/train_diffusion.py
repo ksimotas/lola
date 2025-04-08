@@ -75,9 +75,6 @@ def train(runid: str, cfg: DictConfig):
         cfg.path = str(runpath)
         cfg.seed = randseed(runid)
 
-    if rank == 0:
-        OmegaConf.save(cfg, runpath / "config.yaml")
-
     # Stem
     if cfg.fork.run is None:
         counter = {
@@ -169,14 +166,13 @@ def train(runid: str, cfg: DictConfig):
     x = rearrange(x, "B L H W C -> B C L H W")
 
     # Model, optimizer & scheduler
-    denoiser = get_denoiser(
-        channels=x.shape[1],
-        label_features=label.shape[1],
-        spatial=3,
-        masked=True,
-        **cfg.denoiser,
-    ).to(device)
+    with open_dict(cfg):
+        cfg.denoiser.channels = x.shape[1]
+        cfg.denoiser.label_features = label.shape[1]
+        cfg.denoiser.spatial = 3
+        cfg.denoiser.masked = True
 
+    denoiser = get_denoiser(**cfg.denoiser).to(device)
     denoiser_loss = DenoiserLoss(**cfg.denoiser.loss).to(device)
 
     if cfg.fork.run is not None:
@@ -195,6 +191,9 @@ def train(runid: str, cfg: DictConfig):
     )
 
     # W&B
+    if rank == 0:
+        OmegaConf.save(cfg, runpath / "config.yaml")
+
     if rank == 0:
         run = wandb.init(
             entity=cfg.wandb.entity,
