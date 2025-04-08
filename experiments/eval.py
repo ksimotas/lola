@@ -21,7 +21,7 @@ def evaluate(
     context: int = 1,
     overlap: int = 1,
     samples: int = 1,
-    filtering: Optional[str] = None,
+    guidance: Optional[str] = None,
     sampling: Dict[str, Any] = {},  # noqa: B006
     mixed_precision: bool = False,
     seed: Optional[int] = None,
@@ -184,7 +184,7 @@ def evaluate(
             method = "diffusion"
             settings = f"{sampling.algorithm}{sampling.steps}"
 
-            if filtering is None:
+            if guidance is None:
                 emulate = lambda mask, z_obs, i: emulate_diffusion(
                     denoiser,
                     mask,
@@ -199,12 +199,12 @@ def evaluate(
                         return decode_traj(autoencoder, z, batched=True)
                 # fmt: on
 
-                if filtering == "subsample":
+                if guidance == "subsample":
                     A = lambda x: x[..., ::32, ::32]
-                elif filtering == "downsample":
+                elif guidance == "downscale":
                     A = lambda x: reduce(x, "... (H h) (W w) -> ... H W", "mean", h=32, w=32)
                 else:
-                    raise ValueError(f"unknown operator '{filtering}'")
+                    raise ValueError(f"unknown operator '{guidance}'")
 
                 y = A(x)
                 y = y + 1e-1 * torch.randn_like(y)
@@ -325,7 +325,9 @@ def evaluate(
                         rmse_f.append(torch.sqrt(torch.mean(se_c[mask])))
 
                     # Write
-                    line = f"{runname},{target},{compression},{method},{settings},{filtering},{speed},"
+                    line = (
+                        f"{runname},{target},{compression},{method},{settings},{guidance},{speed},"
+                    )
                     line += f"{split},{index},{start},{seed},"
                     line += f"{context},{overlap},{auto_encoded},"
                     line += f"{field},{(t - context + 1) * cfg.trajectory.stride},"
@@ -356,7 +358,7 @@ def evaluate(
                 file=(
                     outdir
                     / runname
-                    / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{context}_{overlap}_{settings}_{filtering}_{seed}.mp4"
+                    / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{context}_{overlap}_{settings}_{guidance}_{seed}.mp4"
                 ),
                 fps=4.0 / cfg.trajectory.stride,
                 isolate={2},
