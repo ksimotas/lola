@@ -12,32 +12,54 @@ from .diffusion import GaussianDenoiser, MaskedDenoiser
 from .surrogate import MaskedSurrogate
 
 
-def encode_traj(autoencoder: AutoEncoder, x: Tensor, batched: bool = False) -> Tensor:
+def encode_traj(
+    autoencoder: AutoEncoder,
+    x: Tensor,
+    batched: bool = False,
+    chunks: Optional[int] = None,
+) -> Tensor:
     if batched:
         B, *_ = x.shape
         x = rearrange(x, "B C L ... -> (B L) C ...")
-        z = autoencoder.encode(x)
-        z = rearrange(z, "(B L) C ... -> B C L ...", B=B)
     else:
         x = rearrange(x, "C L ... -> L C ...")
+
+    if chunks is None:
         z = autoencoder.encode(x)
+    else:
+        z = torch.cat([autoencoder.encode(xi) for xi in torch.tensor_split(x, chunks)])
+
+    if batched:
+        z = rearrange(z, "(B L) C ... -> B C L ...", B=B)
+    else:
         z = rearrange(z, "L C ... -> C L ...")
 
-    return z
+    return z.to(dtype=x.dtype)
 
 
-def decode_traj(autoencoder: AutoEncoder, z: Tensor, batched: bool = False) -> Tensor:
+def decode_traj(
+    autoencoder: AutoEncoder,
+    z: Tensor,
+    batched: bool = False,
+    chunks: Optional[int] = None,
+) -> Tensor:
     if batched:
         B, *_ = z.shape
         z = rearrange(z, "B C L ... -> (B L) C ...")
-        x = autoencoder.decode(z)
-        x = rearrange(x, "(B L) C ... -> B C L ...", B=B)
     else:
         z = rearrange(z, "C L ... -> L C ...")
+
+    if chunks is None:
         x = autoencoder.decode(z)
+    else:
+        x = torch.cat([autoencoder.decode(zi) for zi in torch.tensor_split(z, chunks)])
+
+    if batched:
+        x = rearrange(x, "(B L) C ... -> B C L ...", B=B)
+    else:
         x = rearrange(x, "L C ... -> C L ...")
 
-    return x
+    return x.to(dtype=z.dtype)
 
 
 def emulate_surrogate(

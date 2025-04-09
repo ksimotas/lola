@@ -135,11 +135,12 @@ def apply_rope(q: Tensor, k: Tensor, theta: Tensor) -> Tuple[Tensor, Tensor]:
         The rotated query and key tokens, with shape :math:`(*, C)`.
     """
 
-    q, k, theta = (
-        q.to(dtype=torch.float32),
-        k.to(dtype=torch.float32),
-        theta.to(dtype=torch.float32),
-    )
+    if torch.is_autocast_enabled():
+        q, k, theta = (
+            q.to(dtype=torch.float32),
+            k.to(dtype=torch.float32),
+            theta.to(dtype=torch.float32),
+        )
 
     rotation = torch.polar(torch.ones_like(theta), theta)
 

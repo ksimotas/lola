@@ -23,7 +23,7 @@ def evaluate(
     samples: int = 1,
     guidance: Optional[str] = None,
     sampling: Dict[str, Any] = {},  # noqa: B006
-    mixed_precision: bool = False,
+    mixed_precision: bool = True,
     seed: Optional[int] = None,
     record: int = 0,
     **ignore,
@@ -149,7 +149,7 @@ def evaluate(
         x = preprocess(x)
         x = rearrange(x, "L H W C -> C L H W")
 
-        with torch.no_grad():
+        with torch.no_grad(), torch.autocast(device_type="cuda", enabled=mixed_precision):
             z = encode_traj(autoencoder, x)
             x_ae = decode_traj(autoencoder, z)
 
@@ -217,7 +217,7 @@ def evaluate(
 
         tic = time.time()
 
-        with torch.autocast(device_type="cuda", enabled=mixed_precision):
+        with torch.no_grad(), torch.autocast(device_type="cuda", enabled=mixed_precision):
             z_hat = emulate_rollout(
                 emulate,
                 z,
@@ -228,8 +228,10 @@ def evaluate(
                 batch=samples,
             )
 
-        with torch.no_grad():
-            x_hat = decode_traj(autoencoder, z_hat, batched=True)
+            if "euler" in cfg.dataset.name:
+                x_hat = decode_traj(autoencoder, z_hat, batched=True, chunks=4)
+            else:
+                x_hat = decode_traj(autoencoder, z_hat, batched=True)
 
         tac = time.time()
 
