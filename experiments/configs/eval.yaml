@@ -8,7 +8,7 @@ array: 64
 start: 0
 context: 1
 overlap: 1
-samples: 5
+samples: 16
 guidance: null
 sampling:
   algorithm: "ab"

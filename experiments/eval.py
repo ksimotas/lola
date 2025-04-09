@@ -266,8 +266,8 @@ def evaluate(
                     se = torch.square(u - torch.mean(v, dim=0))
                     mse = torch.mean(se)
                     rmse = torch.sqrt(mse)
-                    nrmse = torch.sqrt(mse / torch.mean(u**2))
-                    vrmse = torch.sqrt(mse / torch.var(u))
+                    nrmse = torch.sqrt(mse / (torch.mean(u**2) + 1e-6))
+                    vrmse = torch.sqrt(mse / (torch.var(u) + 1e-6))
 
                     # Invariants
                     invariants = []

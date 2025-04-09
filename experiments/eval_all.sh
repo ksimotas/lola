@@ -25,7 +25,7 @@ for run in "${runs[@]}"
 do
     if [[ $run = *"rayleigh_benard"* ]]
     then
-        starts=(4 16 64)
+        starts=(16 32 64)
     else
         starts=(0)
     fi
