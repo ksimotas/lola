@@ -145,7 +145,7 @@ def evaluate(
         _ = torch.manual_seed(randseed(f"{seed},{index},{start}"))
 
         x, label = get_well_inputs(dataset[index], device=device)
-        x = x[start :: cfg.trajectory.stride]
+        x = x[max(0, start - (context - 1) * cfg.trajectory.stride) :: cfg.trajectory.stride]
         x = preprocess(x)
         x = rearrange(x, "L H W C -> C L H W")
 
