@@ -307,12 +307,9 @@ def evaluate(
                         rmse_f.append(torch.sqrt(torch.mean(se_c[mask])))
 
                     # Write
-                    line = (
-                        f"{runname},{target},{compression},{method},{settings},{guidance},{speed},"
-                    )
+                    line = f"{runname},{target},{compression},{method},{settings},{guidance},{context},{overlap},{speed},"
                     line += f"{split},{index},{start},{seed},"
-                    line += f"{context},{overlap},{auto_encoded},"
-                    line += f"{field},{(t - context + 1) * cfg.trajectory.stride},"
+                    line += f"{field},{(t - context + 1) * cfg.trajectory.stride},{auto_encoded},"
                     line += f"{m1},{m2},{spread},{rmse},{nrmse},{vrmse},"
                     line += ",".join(map(format, (*invariants, *rmse_f, *label.tolist())))
                     line += "\n"
