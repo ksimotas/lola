@@ -256,6 +256,10 @@ def evaluate(
                     else:
                         u, v = x[field, t], x_hat[:, field, t]
 
+                    # Moments
+                    m1 = torch.mean(u)
+                    m2 = torch.mean(u**2)
+
                     # Spread
                     if samples > 1:
                         # see https://doi.org/10.1175/JHM-D-14-0008.1
@@ -309,7 +313,7 @@ def evaluate(
                     line += f"{split},{index},{start},{seed},"
                     line += f"{context},{overlap},{auto_encoded},"
                     line += f"{field},{(t - context + 1) * cfg.trajectory.stride},"
-                    line += f"{spread},{rmse},{nrmse},{vrmse},"
+                    line += f"{m1},{m2},{spread},{rmse},{nrmse},{vrmse},"
                     line += ",".join(map(format, (*invariants, *rmse_f, *label.tolist())))
                     line += "\n"
 
