@@ -115,9 +115,7 @@ class LogLogitSchedule(Schedule):
         return torch.ones_like(t)
 
     def sigma(self, t: Tensor) -> Tensor:
-        return torch.exp(
-            self.scale * torch.logit(t * (self.t_max - self.t_min) + self.t_min) + self.shift
-        )
+        return torch.exp(self.scale * torch.logit(t * (self.t_max - self.t_min) + self.t_min) + self.shift)
 
     def forward(self, t: Tensor) -> Tuple[Tensor, Tensor]:
         return self.alpha(t), self.sigma(t)

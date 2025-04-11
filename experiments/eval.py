@@ -99,9 +99,7 @@ def evaluate(
         cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml").ae
         cfg.ae.latent_noise = 0.0
 
-        state = torch.load(
-            runpath / "autoencoder/state.pth", weights_only=True, map_location=device
-        )
+        state = torch.load(runpath / "autoencoder/state.pth", weights_only=True, map_location=device)
 
         autoencoder = get_autoencoder(**cfg.ae)
         autoencoder.load_state_dict(state)
@@ -137,9 +135,7 @@ def evaluate(
         seed = torch.initial_seed()
 
     # Evaluation
-    indices = {
-        int(index * len(dataset)) if isinstance(index, float) else index for index in indices
-    }
+    indices = {int(index * len(dataset)) if isinstance(index, float) else index for index in indices}
 
     for index in tqdm(indices, ncols=88, ascii=True):
         _ = torch.manual_seed(randseed(f"{seed},{index},{start}"))

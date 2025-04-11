@@ -32,7 +32,7 @@ all = [
 
 [tool.ruff]
 extend-include = ["*.ipynb"]
-line-length = 99
+line-length = 120
 
 [tool.ruff.lint]
 extend-select = ["B", "I", "W"]

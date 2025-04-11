@@ -191,9 +191,7 @@ class ViT(nn.Module):
         self.patch = Patchify(patch_size, channel_last=True)
         self.unpatch = Unpatchify(unpatch_size, channel_last=True)
 
-        self.in_proj = nn.Linear(
-            math.prod(patch_size) * (in_channels + cond_channels), hid_channels
-        )
+        self.in_proj = nn.Linear(math.prod(patch_size) * (in_channels + cond_channels), hid_channels)
         self.out_proj = nn.Linear(hid_channels, math.prod(patch_size) * out_channels)
 
         self.positional_embedding = nn.Sequential(

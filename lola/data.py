@@ -376,9 +376,7 @@ class LazyShuffleDataset(IterableDataset):
 
     def __iter__(self) -> Iterable[Any]:
         buffer = []
-        chunks = [
-            (i, min(i + self.chunk_size, len(self))) for i in range(0, len(self), self.chunk_size)
-        ]
+        chunks = [(i, min(i + self.chunk_size, len(self))) for i in range(0, len(self), self.chunk_size)]
 
         random.shuffle(chunks)
 
@@ -420,9 +418,7 @@ class MiniWellDataset(Dataset):
 
         i, j = i // crops_per_trajectory, i % crops_per_trajectory
 
-        state = self.file["state"][
-            i, slice(j, j + (self.steps - 1) * self.stride + 1, self.stride)
-        ]
+        state = self.file["state"][i, slice(j, j + (self.steps - 1) * self.stride + 1, self.stride)]
         label = self.file["label"][i]
 
         return {

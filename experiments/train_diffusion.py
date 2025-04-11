@@ -87,9 +87,7 @@ def train(runid: str, cfg: DictConfig):
         stem_name = Path(stem.config["path"]).name
         stem_path = Path(f"{cfg.server.storage}/runs/dm/{stem_name}")
         stem_path = stem_path.expanduser().resolve()
-        stem_state = torch.load(
-            stem_path / f"{cfg.fork.target}.pth", weights_only=True, map_location=device
-        )
+        stem_state = torch.load(stem_path / f"{cfg.fork.target}.pth", weights_only=True, map_location=device)
 
         counter = {
             "epoch": stem.summary["_step"] + 1,

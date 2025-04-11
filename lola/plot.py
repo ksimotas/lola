@@ -64,9 +64,7 @@ def animate_fields(
 
         for j in range(1):
             if y is None:
-                img = axs[j, i].imshow(
-                    x[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
-                )
+                img = axs[j, i].imshow(x[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none")
                 axs[j, i].set_xticks([])
                 axs[j, i].set_yticks([])
 
@@ -74,15 +72,11 @@ def animate_fields(
 
                 artists.append(img)
             else:
-                img0 = axs[3 * j, i].imshow(
-                    x[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
-                )
+                img0 = axs[3 * j, i].imshow(x[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none")
                 axs[3 * j, i].set_xticks([])
                 axs[3 * j, i].set_yticks([])
 
-                img1 = axs[3 * j + 1, i].imshow(
-                    y[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
-                )
+                img1 = axs[3 * j + 1, i].imshow(y[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none")
                 axs[3 * j + 1, i].set_xticks([])
                 axs[3 * j + 1, i].set_yticks([])
 
@@ -169,15 +163,11 @@ def plot_fields(
 
                 axs[j, 0].set_ylabel(rf"$x_{{{timesteps[j]}}}$")
             else:
-                axs[3 * j, i].imshow(
-                    x[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
-                )
+                axs[3 * j, i].imshow(x[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none")
                 axs[3 * j, i].set_xticks([])
                 axs[3 * j, i].set_yticks([])
 
-                axs[3 * j + 1, i].imshow(
-                    y[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none"
-                )
+                axs[3 * j + 1, i].imshow(y[i, j], cmap=cmap, vmin=vmin, vmax=vmax, interpolation="none")
                 axs[3 * j + 1, i].set_xticks([])
                 axs[3 * j + 1, i].set_yticks([])
 
