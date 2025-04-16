@@ -97,7 +97,6 @@ def evaluate(
     # Autoencoder
     if (runpath / "autoencoder").exists():
         cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml").ae
-        cfg.ae.latent_noise = 0.0
 
         state = torch.load(runpath / "autoencoder/state.pth", weights_only=True, map_location=device)
 
@@ -106,8 +105,16 @@ def evaluate(
         autoencoder.to(device)
         autoencoder.requires_grad_(False)
         autoencoder.eval()
+    elif hasattr(cfg, "ae"):
+        cfg.trajectory = {"stride": 4}
 
-        del state
+        state = torch.load(runpath / "state.pth", weights_only=True, map_location=device)
+
+        autoencoder = get_autoencoder(**cfg.ae)
+        autoencoder.load_state_dict(state)
+        autoencoder.to(device)
+        autoencoder.requires_grad_(False)
+        autoencoder.eval()
     else:
         autoencoder = nn.Module()
         autoencoder.encode = nn.Identity()
@@ -168,7 +175,7 @@ def evaluate(
                 # fmt: off
                 def D(z):
                     with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
-                        return decode_traj(autoencoder, z, batched=True)
+                        return decode_traj(autoencoder, z, batched=True, noisy=False)
                 # fmt: on
 
                 if guidance == "subsample":
@@ -210,19 +217,25 @@ def evaluate(
                 z_obs,
                 label=label,  # noqa: B023
             )
+        else:
+            method = "autoencoder"
+            settings = None
 
         tic = time.time()
 
         with torch.no_grad(), torch.autocast(device_type="cuda", enabled=mixed_precision):
-            z_hat = emulate_rollout(
-                emulate,
-                z,
-                window=cfg.trajectory.length,
-                rollout=z.shape[1],
-                context=context,
-                overlap=overlap,
-                batch=samples,
-            )
+            if method in ("diffusion", "surrogate"):
+                z_hat = emulate_rollout(
+                    emulate,
+                    z,
+                    window=cfg.trajectory.length,
+                    rollout=z.shape[1],
+                    context=context,
+                    overlap=overlap,
+                    batch=samples,
+                )
+            else:
+                z_hat = z.expand(samples, *z.shape)
 
             if "euler" in cfg.dataset.name:
                 x_hat = decode_traj(autoencoder, z_hat, batched=True, chunks=4)

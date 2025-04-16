@@ -64,8 +64,8 @@ class AutoEncoder(nn.Module):
         z = self.saturate(z)
         return z
 
-    def decode(self, z: Tensor) -> Tensor:
-        if self.noise > 0:
+    def decode(self, z: Tensor, noisy: bool = True) -> Tensor:
+        if noisy and self.noise > 0:
             z = z + self.noise * torch.randn_like(z)
 
         return self.decoder(z)

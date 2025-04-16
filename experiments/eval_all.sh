@@ -1,6 +1,14 @@
 #!/usr/bin/bash
 
 runs=(
+    "/mnt/ceph/users/frozet/lola/runs/ae/z522jsw5_euler_all_dcae_f32c4_large"
+    "/mnt/ceph/users/frozet/lola/runs/ae/8f21pxzs_euler_all_dcae_f32c16_large"
+    "/mnt/ceph/users/frozet/lola/runs/ae/yw23shfh_euler_all_dcae_f32c32_large"
+    "/mnt/ceph/users/frozet/lola/runs/ae/n6g8kix8_euler_all_dcae_f32c64_large"
+    "/mnt/ceph/users/frozet/lola/runs/ae/2bkdxjib_rayleigh_benard_dcae_f32c4_large"
+    "/mnt/ceph/users/frozet/lola/runs/ae/84hwskd9_rayleigh_benard_dcae_f32c16_large"
+    "/mnt/ceph/users/frozet/lola/runs/ae/a4fulyxg_rayleigh_benard_dcae_f32c32_large"
+    "/mnt/ceph/users/frozet/lola/runs/ae/di2j3rpb_rayleigh_benard_dcae_f32c64_large"
     "/mnt/ceph/users/frozet/lola/runs/dm/otocl205_euler_all_f32c4_vit_large"
     "/mnt/ceph/users/frozet/lola/runs/dm/oy7s3wfq_euler_all_f32c16_vit_large"
     "/mnt/ceph/users/frozet/lola/runs/dm/6mnf6vle_euler_all_f32c32_vit_large"
@@ -25,7 +33,7 @@ for run in "${runs[@]}"
 do
     if [[ $run = *"rayleigh_benard"* ]]
     then
-        starts=(16 32 64)
+        starts=(16 32)
     else
         starts=(0)
     fi
