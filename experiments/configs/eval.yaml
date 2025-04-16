@@ -4,6 +4,7 @@ defaults:
 run: ???
 target: "state"
 split: "valid"
+destination: "results"
 array: 64
 start: 0
 context: 1

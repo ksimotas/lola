@@ -17,6 +17,7 @@ def evaluate(
     indices: Sequence[Union[int, float]],
     target: str = "state",
     split: str = "valid",
+    destination: str = "results",
     start: int = 0,
     context: int = 1,
     overlap: int = 1,
@@ -28,6 +29,7 @@ def evaluate(
     record: int = 0,
     **ignore,
 ):
+    import numpy as np
     import time
     import torch
     import torch.nn as nn
@@ -325,13 +327,23 @@ def evaluate(
 
                     lines.append(line)
 
-        outdir = Path(f"{server.storage}/results/{cfg.dataset.name}")
+        outdir = Path(f"{server.storage}/{destination}/{cfg.dataset.name}")
         outdir = outdir.expanduser().resolve()
         (outdir / runname).mkdir(parents=True, exist_ok=True)
 
         with FileLock(outdir / "stats.csv.lock"):
             with open(outdir / "stats.csv", mode="a") as f:
                 f.writelines(lines)
+
+        # NumPy
+        if record > 0:
+            np.savez(
+                outdir
+                / runname
+                / f"{runname}_{target}_{split}_{index:06d}_{start:03d}_{context}_{overlap}_{settings}_{guidance}_{seed}.npz",
+                x=x.numpy(force=True),
+                x_hat=x_hat[:record].numpy(force=True),
+            )
 
         # Video
         if x.shape[-1] < x.shape[-2]:

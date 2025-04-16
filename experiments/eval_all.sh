@@ -44,5 +44,7 @@ do
         do
             python eval.py run=$run start=$start context=$context overlap=$context
         done
+
+        python eval.py run=$run start=$start destination="videos" array=7 samples=3 record=3 seed=42
     done
 done
