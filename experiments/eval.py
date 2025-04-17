@@ -32,7 +32,6 @@ def evaluate(
     import numpy as np
     import time
     import torch
-    import torch.nn as nn
 
     from azula.guidance import MMPSDenoiser
     from einops import rearrange, reduce
@@ -118,9 +117,7 @@ def evaluate(
         autoencoder.requires_grad_(False)
         autoencoder.eval()
     else:
-        autoencoder = nn.Module()
-        autoencoder.encode = nn.Identity()
-        autoencoder.decode = nn.Identity()
+        autoencoder = None
 
     # Emulator
     state = torch.load(runpath / f"{target}.pth", weights_only=True, map_location=device)

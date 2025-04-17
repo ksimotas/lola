@@ -19,6 +19,9 @@ def encode_traj(
     chunks: Optional[int] = None,
     **kwargs,
 ) -> Tensor:
+    if autoencoder is None:
+        return x
+
     if batched:
         B, *_ = x.shape
         x = rearrange(x, "B C L ... -> (B L) C ...")
@@ -45,6 +48,9 @@ def decode_traj(
     chunks: Optional[int] = None,
     **kwargs,
 ) -> Tensor:
+    if autoencoder is None:
+        return z
+
     if batched:
         B, *_ = z.shape
         z = rearrange(z, "B C L ... -> (B L) C ...")
