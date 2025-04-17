@@ -156,7 +156,7 @@ def evaluate(
 
         with torch.no_grad(), torch.autocast(device_type="cuda", enabled=mixed_precision):
             z = encode_traj(autoencoder, x)
-            x_ae = decode_traj(autoencoder, z)
+            x_ae = decode_traj(autoencoder, z, noisy=False)
 
         compression = x.numel() / z.numel()
 
@@ -240,9 +240,9 @@ def evaluate(
                 z_hat = z.expand(samples, *z.shape)
 
             if "euler" in cfg.dataset.name:
-                x_hat = decode_traj(autoencoder, z_hat, batched=True, chunks=4)
+                x_hat = decode_traj(autoencoder, z_hat, batched=True, noisy=False, chunks=4)
             else:
-                x_hat = decode_traj(autoencoder, z_hat, batched=True)
+                x_hat = decode_traj(autoencoder, z_hat, batched=True, noisy=False)
 
         tac = time.time()
 
@@ -318,7 +318,8 @@ def evaluate(
                         rmse_f.append(torch.sqrt(torch.mean(se_c[mask])))
 
                     # Write
-                    line = f"{runname},{target},{compression},{method},{settings},{guidance},{context},{overlap},{speed},"
+                    line = f"{runname},{target},{compression},{method},"
+                    line += f"{settings},{guidance},{context},{overlap},{speed},"
                     line += f"{split},{index},{start},{seed},"
                     line += f"{field},{(t - context + 1) * cfg.trajectory.stride},{auto_encoded},"
                     line += f"{m1},{m2},{spread},{rmse},{nrmse},{vrmse},"
