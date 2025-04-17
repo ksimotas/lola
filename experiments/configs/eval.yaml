@@ -3,7 +3,7 @@ defaults:
 
 run: ???
 target: "state"
-split: "valid"
+split: "test"
 destination: "results"
 array: 64
 start: 0

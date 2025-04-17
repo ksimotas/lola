@@ -16,7 +16,7 @@ def evaluate(
     server: DictConfig,
     indices: Sequence[Union[int, float]],
     target: str = "state",
-    split: str = "valid",
+    split: str = "test",
     destination: str = "results",
     start: int = 0,
     context: int = 1,
