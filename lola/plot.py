@@ -241,6 +241,7 @@ def field2rgb(
     x: ArrayLike,
     vmin: Optional[float] = None,
     vmax: Optional[float] = None,
+    contrast: float = 1.5,
     cmap: str = "RdBu_r",
     bad: str = "whitesmoke",
 ) -> ArrayLike:
@@ -256,6 +257,9 @@ def field2rgb(
     palette.set_bad(bad)
 
     x = (x - vmin) / (vmax - vmin)
+    x = 2 * x - 1
+    x = np.sign(x) * np.abs(x) ** (1 / contrast)
+    x = (x + 1) / 2
     x = np.clip(x, a_min=0.0, a_max=1.0)
     x = palette(x)
     x = 255 * x[..., :3]
