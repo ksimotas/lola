@@ -24,7 +24,6 @@ def evaluate(
     samples: int = 1,
     guidance: Optional[str] = None,
     sampling: Dict[str, Any] = {},  # noqa: B006
-    mixed_precision: bool = True,
     seed: Optional[int] = None,
     record: int = 0,
     **ignore,
@@ -62,6 +61,9 @@ def evaluate(
     from lola.utils import randseed
 
     device = torch.device("cuda")
+
+    # Performance
+    torch.set_float32_matmul_precision("high")
 
     # Config
     runpath = Path(run)
@@ -151,7 +153,7 @@ def evaluate(
         x = preprocess(x)
         x = rearrange(x, "L H W C -> C L H W")
 
-        with torch.no_grad(), torch.autocast(device_type="cuda", enabled=mixed_precision):
+        with torch.no_grad():
             z = encode_traj(autoencoder, x)
             x_ae = decode_traj(autoencoder, z, noisy=False)
 
@@ -222,7 +224,7 @@ def evaluate(
 
         tic = time.time()
 
-        with torch.no_grad(), torch.autocast(device_type="cuda", enabled=mixed_precision):
+        with torch.no_grad():
             if method in ("diffusion", "surrogate"):
                 z_hat = emulate_rollout(
                     emulate,

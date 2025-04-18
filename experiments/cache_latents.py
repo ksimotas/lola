@@ -32,6 +32,9 @@ def cache_latent(
 
     device = torch.device("cuda")
 
+    # Performance
+    torch.set_float32_matmul_precision("high")
+
     # Config
     runpath = Path(cfg.run)
     runpath = runpath.expanduser().resolve(strict=True)

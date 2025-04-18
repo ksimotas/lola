@@ -48,6 +48,9 @@ def train(runid: str, cfg: DictConfig):
     device = torch.device(f"cuda:{device_id}")
     torch.cuda.set_device(device)
 
+    # Performance
+    torch.set_float32_matmul_precision("high")
+
     # Config
     assert cfg.train.epoch_size % cfg.train.batch_size == 0
     assert cfg.train.batch_size % (cfg.train.accumulation * world_size) == 0
