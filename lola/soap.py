@@ -56,7 +56,7 @@ class SOAP(torch.optim.Optimizer):
     ):
         defaults = {
             "lr": lr,
-            "betas": betas[:3],
+            "betas": tuple(betas)[:3],
             "eps": eps,
             "weight_decay": weight_decay,
             "precondition_frequency": precondition_frequency,
@@ -87,9 +87,9 @@ class SOAP(torch.optim.Optimizer):
         if cum_size > 1:
             new_shape.append(cum_size)
 
-        new_shape = (shape[0], *new_shape[::-1])
+        new_shape = [shape[0], *new_shape[::-1]]
 
-        return new_shape
+        return tuple(new_shape)
 
     @torch.no_grad()
     def step(self, closure=None):
@@ -188,9 +188,6 @@ class SOAP(torch.optim.Optimizer):
     ):
         """Initializes the preconditioner matrices."""
 
-        state["GG"] = []
-        state["Q"] = None
-
         grad = grad.squeeze()
 
         if merge_dims and grad.ndim > 1:
@@ -198,14 +195,19 @@ class SOAP(torch.optim.Optimizer):
         else:
             state["precond_shape"] = grad.shape
 
+        GG = []
+
         if grad.numel() > 1 and (grad.ndim > 1 or precondition_1d):
             for s in state["precond_shape"]:
                 if s > max_precond_size or s == 1:
-                    state["GG"].append(None)
+                    GG.append(None)
                 else:
-                    state["GG"].append(torch.zeros(s, s, dtype=grad.dtype, device=grad.device))
+                    GG.append(torch.zeros(s, s, dtype=grad.dtype, device=grad.device))
         else:
-            state["GG"].append(None)
+            GG.append(None)
+
+        state["GG"] = tuple(GG)
+        state["Q"] = None
 
         self.update_preconditioner(grad, state, shampoo_beta=0.0)
 
@@ -265,7 +267,7 @@ class SOAP(torch.optim.Optimizer):
                 Q.append(None)
             else:
                 m32 = m.to(dtype=torch.float32)
-                _, q32 = torch.linalg.eigh(m32 + 1e-12 * torch.eye(*m32.shape, dtype=m32.dtype, device=m32.device))
+                _, q32 = torch.linalg.eigh(m32 + 1e-9 * torch.eye(*m32.shape, dtype=m32.dtype, device=m32.device))
                 q = q32.to(dtype=m.dtype)
                 Q.append(torch.fliplr(q))
 
@@ -289,7 +291,7 @@ class SOAP(torch.optim.Optimizer):
                 q = q32.to(dtype=q.dtype)
                 Q.append(q)
 
-        return Q
+        return tuple(Q)
 
 
 def adam(mean, var, eps=1e-8):
