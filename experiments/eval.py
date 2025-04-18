@@ -130,6 +130,7 @@ def evaluate(
         denoiser.to(device)
         denoiser.requires_grad_(False)
         denoiser.eval()
+        denoiser = torch.compile(denoiser)
     elif hasattr(cfg, "surrogate"):
         surrogate = get_surrogate(**cfg.surrogate)
         surrogate.load_state_dict(state)

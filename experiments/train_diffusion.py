@@ -181,7 +181,7 @@ def train(runid: str, cfg: DictConfig):
         del stem_state
 
     denoiser = DistributedDataParallel(
-        module=denoiser,
+        module=torch.compile(denoiser),
         device_ids=[device_id],
     )
 
@@ -318,7 +318,7 @@ def train(runid: str, cfg: DictConfig):
 
         ## Checkpoint
         if rank == 0:
-            state = denoiser.module.state_dict()
+            state = denoiser.module._orig_mod.state_dict()
 
             torch.save(state, runpath / "state.pth")
 
