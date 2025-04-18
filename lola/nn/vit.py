@@ -13,7 +13,6 @@ __all__ = [
     "ViT",
 ]
 
-import functools
 import math
 import torch
 import torch.nn as nn
@@ -220,7 +219,6 @@ class ViT(nn.Module):
             self.window_size = tuple(window_size)
 
     @staticmethod
-    @functools.cache
     def coo_and_mask(
         shape: Sequence[int],
         spatial: int,
