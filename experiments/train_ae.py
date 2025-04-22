@@ -135,7 +135,7 @@ def train(runid: str, cfg: DictConfig):
             autoencoder.decoder.requires_grad_(False)
 
     autoencoder = DistributedDataParallel(
-        module=torch.compile(autoencoder),
+        module=autoencoder,
         device_ids=[device_id],
     )
 
@@ -266,7 +266,7 @@ def train(runid: str, cfg: DictConfig):
 
         ## Checkpoint
         if rank == 0:
-            state = autoencoder.module._orig_mod.state_dict()
+            state = autoencoder.module.state_dict()
             torch.save(state, runpath / "state.pth")
             del state
 
