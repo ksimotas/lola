@@ -3,7 +3,7 @@ defaults:
   - denoiser: vit_large
   - denoiser/loss: uniform
   - denoiser/schedule: log_logit
-  - optim: psgd
+  - optim: adamw
   - server: rusty
 
 ae_run: null

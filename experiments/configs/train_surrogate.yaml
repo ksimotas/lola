@@ -1,7 +1,7 @@
 defaults:
   - dataset: euler_all
   - surrogate: vit_large
-  - optim: psgd
+  - optim: adamw
   - server: rusty
 
 ae_run: null
