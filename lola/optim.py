@@ -6,8 +6,8 @@ __all__ = [
     "safe_gd_step",
 ]
 
+import heavyball
 import math
-import os
 import torch
 import torch.nn as nn
 
@@ -18,7 +18,7 @@ from typing import Iterable, Optional, Sequence, Tuple
 
 from .soap import SOAP
 
-os.environ["TORCHINDUCTOR_CACHE_DIR"] = os.path.expanduser("~/.cache/torchinductor")
+heavyball.utils.compile_mode = "default"
 
 
 class ExponentialMovingAverage(torch.optim.swa_utils.AveragedModel):
