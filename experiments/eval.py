@@ -75,7 +75,7 @@ def evaluate(
 
     # Data
     dataset = get_well_multi_dataset(
-        path="/mnt/ceph/users/polymathic/the_well/datasets",
+        path=server.datasets,
         physics=cfg.dataset.physics,
         split=split,
         steps=-1,
