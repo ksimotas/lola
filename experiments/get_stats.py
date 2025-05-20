@@ -43,6 +43,7 @@ def get_stats(cfg: DictConfig):
 
     # Fetch
     mins = []
+    meds = []
     maxs = []
     first_moments = []
     second_moments = []
@@ -53,17 +54,20 @@ def get_stats(cfg: DictConfig):
         x = rearrange(x, "... C -> (...) C")
 
         mins.append(x.min(dim=0).values)
+        meds.append(x.median(dim=0).values)
         maxs.append(x.max(dim=0).values)
         first_moments.append(x.mean(dim=0))
         second_moments.append(x.square().mean(dim=0))
 
     mins = torch.stack(mins).min(dim=0).values
+    meds = torch.stack(meds).median(dim=0).values
     maxs = torch.stack(maxs).max(dim=0).values
     first_moments = torch.stack(first_moments).mean(dim=0)
     second_moments = torch.stack(second_moments).mean(dim=0)
 
     stats = {
         "min": mins.tolist(),
+        "median": meds.tolist(),
         "max": maxs.tolist(),
         "mean": first_moments.tolist(),
         "std": torch.sqrt(second_moments - first_moments**2).tolist(),

@@ -167,13 +167,13 @@ def train(runid: str, cfg: DictConfig):
         )
 
     x, label = get_well_inputs(next(valid_loader))
-    x = rearrange(x, "B L H W C -> B C L H W")
+    x = rearrange(x, "B L ... C -> B C L ...")
 
     # Model, optimizer & scheduler
     with open_dict(cfg):
         cfg.surrogate.channels = x.shape[1]
         cfg.surrogate.label_features = label.shape[1]
-        cfg.surrogate.spatial = 3
+        cfg.surrogate.spatial = len(cfg.dataset.dimensions) + 1
 
     surrogate = get_surrogate(**cfg.surrogate).to(device)
 
@@ -222,7 +222,7 @@ def train(runid: str, cfg: DictConfig):
         for i in range(cfg.train.epoch_size // cfg.train.batch_size):
             x, label = get_well_inputs(next(train_loader), device=device)
             x = preprocess(x)
-            x = rearrange(x, "B L H W C -> B C L H W")
+            x = rearrange(x, "B L ... C -> B C L ...")
 
             mask = random_context_mask(x, **cfg.trajectory.context)
 
@@ -285,7 +285,7 @@ def train(runid: str, cfg: DictConfig):
             for _ in range(cfg.valid.epoch_size // cfg.valid.batch_size):
                 x, label = get_well_inputs(next(valid_loader), device=device)
                 x = preprocess(x)
-                x = rearrange(x, "B L H W C -> B C L H W")
+                x = rearrange(x, "B L ... C -> B C L ...")
 
                 mask = random_context_mask(x, **cfg.trajectory.context)
 

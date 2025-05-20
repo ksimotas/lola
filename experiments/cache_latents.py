@@ -88,7 +88,7 @@ def cache_latent(
                 while True:
                     x, label = get_well_inputs(dataset[i], device=device)
                     x = preprocess(x)
-                    x = rearrange(x, "L H W C -> L C H W")
+                    x = rearrange(x, "L ... C -> L C ...")
 
                     for y in visited:
                         if torch.allclose(x, y):

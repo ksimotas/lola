@@ -1,6 +1,7 @@
 name: "euler_open"
 physics: ["euler_multi_quadrants_openBC"]
 include_filters: []
+dimensions: ["x", "y"]
 periodic: false
 fields: ["energy", "density", "pressure", "momentum_x", "momentum_y"]
 transform: {0: "log1p", 1: "log1p", 2: "log1p"}

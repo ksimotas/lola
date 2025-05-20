@@ -121,6 +121,7 @@ def train(runid: str, cfg: DictConfig):
     # Model, optimizer & scheduler
     with open_dict(cfg):
         cfg.ae.pix_channels = len(cfg.dataset.fields)
+        cfg.ae.spatial = len(cfg.dataset.dimensions)
 
     autoencoder = get_autoencoder(**cfg.ae).to(device)
     autoencoder_loss = AutoEncoderLoss(**cfg.ae.loss).to(device)
@@ -173,7 +174,7 @@ def train(runid: str, cfg: DictConfig):
         for i in range(cfg.train.epoch_size // cfg.train.batch_size):
             x, _ = get_well_inputs(next(train_loader), device=device)
             x = preprocess(x)
-            x = rearrange(x, "B 1 H W C -> B C H W")
+            x = rearrange(x, "B 1 ... C -> B C ...")
 
             if (i + 1) % cfg.train.accumulation == 0:
                 loss = autoencoder_loss(autoencoder, x)
@@ -230,7 +231,7 @@ def train(runid: str, cfg: DictConfig):
             for _ in range(cfg.valid.epoch_size // cfg.valid.batch_size):
                 x, _ = get_well_inputs(next(valid_loader), device=device)
                 x = preprocess(x)
-                x = rearrange(x, "B 1 H W C -> B C H W")
+                x = rearrange(x, "B 1 ... C -> B C ...")
 
                 loss = autoencoder_loss(autoencoder, x)
                 losses.append(loss)

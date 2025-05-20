@@ -1,6 +1,7 @@
 name: "euler_periodic"
 physics: ["euler_multi_quadrants_periodicBC"]
 include_filters: []
+dimensions: ["x", "y"]
 periodic: true
 fields: ["energy", "density", "pressure", "momentum_x", "momentum_y"]
 transform: {0: "log1p", 1: "log1p", 2: "log1p"}

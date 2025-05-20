@@ -8,7 +8,6 @@ import os
 import random
 import torch
 
-from einops import rearrange
 from the_well.data import WellDataset
 from the_well.data.augmentation import (
     Augmentation,
@@ -30,6 +29,10 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tupl
 
 TRANSFORMS = {
     "log": (torch.log, torch.exp),
+    "log_eps": (
+        lambda x: torch.log(x + 1e-6),
+        lambda x: torch.exp(x) - 1e-6,
+    ),
     "log1p": (torch.log1p, torch.expm1),
     "arcsinh": (torch.arcsinh, torch.sinh),
 }
@@ -146,7 +149,7 @@ class LogScalars(Augmentation):
         scalars = data["constant_scalars"]
 
         for key, value in scalars.items():
-            if key.lower() in ("rayleigh", "prandtl"):
+            if key.lower() in ("rayleigh", "prandtl", "rho0", "T0"):
                 scalars[key] = value.log()
 
         data["constant_scalars"] = scalars
@@ -266,24 +269,24 @@ def get_well_inputs(
     """
 
     if "input_fields" in item:
-        x = item["input_fields"]
-        x = x.to(device=device, non_blocking=True)
-
         scalars = item["constant_scalars"]
         scalars = scalars.to(device=device, non_blocking=True)
 
         bcs = item["boundary_conditions"]
         bcs = bcs.to(device=device, non_blocking=True)
-        bcs = rearrange(bcs, "... H W -> ... (H W)")
+        bcs = bcs.flatten(start_dim=scalars.ndim - 1)  # ... H W -> ... (H W)
 
         label = torch.cat((scalars, bcs), dim=-1)
-    elif "state" in item:
-        x = item["state"]
-        x = x.to(device=device, non_blocking=True)
-        x = rearrange(x, "... L C H W -> ... L H W C")
 
+        x = item["input_fields"]
+        x = x.to(device=device, non_blocking=True)
+    elif "state" in item:
         label = item["label"]
         label = label.to(device=device, non_blocking=True)
+
+        x = item["state"]
+        x = x.to(device=device, non_blocking=True)
+        x = x.movedim(label.ndim, -1)  # L C H W -> L H W C
     else:
         raise KeyError("missing inputs")
 
