@@ -35,7 +35,7 @@ compute:
   nodes: 1
   cpus_per_gpu: 8
   gpus: 8
-  ram: "512GB"
+  ram: "960GB"
   time: "7-00:00:00"
 
 wandb:
