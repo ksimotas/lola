@@ -94,7 +94,7 @@ class AutoEncoderLoss(nn.Module):
     def forward(self, autoencoder: AutoEncoder, x: Tensor, **kwargs) -> Tensor:
         r"""
         Arguments:
-            x: A clean tensor :math:`x`, with shape :math:`(B, ...)`.
+            x: A clean tensor :math:`x`, with shape :math:`(B, C, ...)`.
             kwargs: Optional keyword arguments.
 
         Returns:
@@ -110,6 +110,11 @@ class AutoEncoderLoss(nn.Module):
                 l = (x - y).square().mean()
             elif loss == "mae":
                 l = (x - y).abs().mean()
+            elif loss == "vrmse":
+                x = rearrange(x, "B C ... -> B C (...)")
+                y = rearrange(y, "B C ... -> B C (...)")
+                l = (x - y).square().mean(dim=2) / (x.var(dim=2) + 1e-2)
+                l = torch.sqrt(l).mean()
             elif loss == "similarity":
                 f = rearrange(z, "B ... -> B (...)")
                 l = cosine_similarity(f[None, :], f[:, None], dim=-1)
