@@ -223,6 +223,12 @@ def Patchify(patch_size: Sequence[int], channel_last: bool = False) -> Rearrange
             return Rearrange("... C (L l) (H h) (W w) -> ... L H W (C l h w)", l=l, h=h, w=w)
         else:
             return Rearrange("... C (L l) (H h) (W w) -> ... (C l h w) L H W", l=l, h=h, w=w)
+    elif len(patch_size) == 4:
+        l, h, w, z = patch_size
+        if channel_last:
+            return Rearrange("... C (L l) (H h) (W w) (Z z) -> ... L H W Z (C l h w z)", l=l, h=h, w=w, z=z)
+        else:
+            return Rearrange("... C (L l) (H h) (W w) (Z z) -> ... (C l h w z) L H W Z", l=l, h=h, w=w, z=z)
     else:
         raise NotImplementedError()
 
@@ -246,6 +252,12 @@ def Unpatchify(patch_size: Sequence[int], channel_last: bool = False) -> Rearran
             return Rearrange("... L H W (C l h w) -> ... C (L l) (H h) (W w)", l=l, h=h, w=w)
         else:
             return Rearrange("... (C l h w) L H W -> ... C (L l) (H h) (W w)", l=l, h=h, w=w)
+    elif len(patch_size) == 4:
+        l, h, w, z = patch_size
+        if channel_last:
+            return Rearrange("... L H W Z (C l h w z) -> ... C (L l) (H h) (W w) (Z z)", l=l, h=h, w=w, z=z)
+        else:
+            return Rearrange("... (C l h w z) L H W Z -> ... C (L l) (H h) (W w) (Z z)", l=l, h=h, w=w, z=z)
     else:
         raise NotImplementedError()
 

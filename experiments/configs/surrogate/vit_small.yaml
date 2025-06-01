@@ -7,7 +7,7 @@ ffn_factor: 4
 attention_heads: 4
 qk_norm: true
 rope: true
-patch_size: [1, 1, 1]
+patch_size: 1
 window_size: null
 dropout: 0.05
 checkpointing: false
