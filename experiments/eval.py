@@ -33,7 +33,7 @@ def evaluate(
     import torch
 
     from azula.guidance import MMPSDenoiser
-    from einops import rearrange, reduce
+    from einops import rearrange, reduce, repeat
     from filelock import FileLock
     from functools import partial
     from omegaconf import OmegaConf
@@ -97,6 +97,11 @@ def evaluate(
         transform=cfg.dataset.transform,
     )
 
+    if hasattr(cfg.dataset, "dimensions"):
+        spatial = len(cfg.dataset.dimensions)
+    else:
+        spatial = 2
+
     # Autoencoder
     if (runpath / "autoencoder").exists():
         cfg.ae = OmegaConf.load(runpath / "autoencoder/config.yaml").ae
@@ -109,7 +114,10 @@ def evaluate(
         autoencoder.requires_grad_(False)
         autoencoder.eval()
     elif hasattr(cfg, "ae"):
-        cfg.trajectory = {"stride": 4}
+        if "euler" in cfg.dataset.name or "rayleigh_benard" in cfg.dataset.name:
+            cfg.trajectory = {"stride": 4}
+        else:
+            cfg.trajectory = {"stride": 1}
 
         state = torch.load(runpath / "state.pth", weights_only=True, map_location=device)
 
@@ -152,7 +160,7 @@ def evaluate(
         x, label = get_well_inputs(dataset[index], device=device)
         x = x[max(0, start - (context - 1) * cfg.trajectory.stride) :: cfg.trajectory.stride]
         x = preprocess(x)
-        x = rearrange(x, "L H W C -> C L H W")
+        x = rearrange(x, "L ... C -> C L ...")
 
         with torch.no_grad():
             z = encode_traj(autoencoder, x)
@@ -180,10 +188,14 @@ def evaluate(
                         return decode_traj(autoencoder, z, batched=True, noisy=False)
                 # fmt: on
 
-                if guidance == "subsample":
+                if guidance == "subsample" and spatial == 2:
                     A = lambda x: x[..., ::32, ::32]
-                elif guidance == "downscale":
+                elif guidance == "subsample" and spatial == 3:
+                    A = lambda x: x[..., ::8, ::8, ::8]
+                elif guidance == "downscale" and spatial == 2:
                     A = lambda x: reduce(x, "... (H h) (W w) -> ... H W", "mean", h=32, w=32)
+                elif guidance == "downscale" and spatial == 3:
+                    A = lambda x: reduce(x, "... (H h) (W w) (Z z) -> ... H W Z", "mean", h=8, w=8, z=8)
                 else:
                     raise ValueError(f"unknown operator '{guidance}'")
 
@@ -240,9 +252,13 @@ def evaluate(
                 z_hat = z.expand(samples, *z.shape)
 
             if "euler" in cfg.dataset.name:
-                x_hat = decode_traj(autoencoder, z_hat, batched=True, noisy=False, chunks=4)
+                chunks = 4
+            elif "gravity" in cfg.dataset.name:
+                chunks = 16
             else:
-                x_hat = decode_traj(autoencoder, z_hat, batched=True, noisy=False)
+                chunks = None
+
+            x_hat = decode_traj(autoencoder, z_hat, batched=True, noisy=False, chunks=chunks)
 
         tac = time.time()
 
@@ -252,9 +268,9 @@ def evaluate(
         speed = (tac - tic) / (x_hat.shape[0] * x_hat.shape[1])
 
         ## Postprocess
-        x = postprocess(x, dim=-4)
-        x_ae = postprocess(x_ae, dim=-4)
-        x_hat = postprocess(x_hat, dim=-4)
+        x = postprocess(x, dim=-spatial - 2)
+        x_ae = postprocess(x_ae, dim=-spatial - 2)
+        x_hat = postprocess(x_hat, dim=-spatial - 2)
 
         ## Stats
         lines = []
@@ -295,10 +311,10 @@ def evaluate(
                     invariants.append(1 - total_v / total_u)
 
                     # Fourier
-                    p_u, k = isotropic_power_spectrum(u, spatial=2)
-                    p_v, _ = isotropic_power_spectrum(v, spatial=2)
+                    p_u, k = isotropic_power_spectrum(u, spatial=spatial)
+                    p_v, _ = isotropic_power_spectrum(v, spatial=spatial)
                     p_v = torch.mean(p_v, dim=0)
-                    c_uv, _ = isotropic_cross_correlation(u, v, spatial=2)
+                    c_uv, _ = isotropic_cross_correlation(u, v, spatial=spatial)
                     c_uv = torch.mean(c_uv, dim=0)
 
                     se_p = torch.square(1 - (p_v + 1e-6) / (p_u + 1e-6))
@@ -347,6 +363,13 @@ def evaluate(
             )
 
         # Video
+        if spatial == 3:
+            x, x_hat = x[..., x.shape[-1] // 2], x_hat[..., x_hat.shape[-1] // 2]
+
+        if x.shape[-1] == x.shape[-2] == 64:
+            x = repeat(x, "... H W -> ... (H h) (W w)", h=4, w=4)
+            x_hat = repeat(x_hat, "... H W -> ... (H h) (W w)", h=4, w=4)
+
         if x.shape[-1] < x.shape[-2]:
             x, x_hat = x.mT, x_hat.mT
 

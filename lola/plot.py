@@ -270,9 +270,10 @@ def field2rgb(
 
 def draw(
     x: ArrayLike,  # (M, N, H, W)
-    pad: int = 16,
+    pad: Union[float, int] = 1 / 64,
     background: str = "white",
     isolate: Sequence[int] = (),
+    zoom: int = 1,
     **kwargs,
 ) -> Image.Image:
     if torch.is_tensor(x):
@@ -289,6 +290,9 @@ def draw(
         x = x[None]
 
     M, N, H, W, _ = x.shape
+
+    if isinstance(pad, float):
+        pad = int(pad * max(H, W))
 
     img = Image.new(
         mode="RGB",
@@ -307,6 +311,9 @@ def draw(
             )
 
             img.paste(Image.fromarray(x[i][j]), offset)
+
+    if zoom > 1:
+        img = img.resize((img.width * zoom, img.height * zoom), Image.NEAREST)
 
     return img
 
