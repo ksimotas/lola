@@ -64,10 +64,7 @@ def cache_latent(
     )
 
     # Autoencoder
-    autoencoder = get_autoencoder(
-        pix_channels=dataset.metadata.n_fields,
-        **cfg.ae,
-    )
+    autoencoder = get_autoencoder(**cfg.ae)
 
     state = torch.load(runpath / "state.pth", weights_only=True, map_location=device)
 
