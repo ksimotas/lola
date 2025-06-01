@@ -141,6 +141,7 @@ if __name__ == "__main__":
     for physic in cfg.dataset.physics:
         for split in [cfg.split]:
             path = os.path.join(cfg.server.datasets, physic, "data", split)
+            path = os.path.realpath(os.path.expanduser(path), strict=True)
             files = glob.glob("*.hdf5", root_dir=path) + glob.glob("*.h5", root_dir=path)
 
             for file in files:

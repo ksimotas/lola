@@ -68,15 +68,18 @@ def train(runid: str, cfg: DictConfig):
     runpath = runpath.expanduser().resolve()
     runpath.mkdir(parents=True, exist_ok=True)
 
-    if rank == 0 and cfg.ae_run:
-        os.symlink(os.path.realpath(cfg.ae_run, strict=True), runpath / "autoencoder")
-
-    dist.barrier(device_ids=[device_id])
-
     with open_dict(cfg):
         cfg.name = runname
         cfg.path = str(runpath)
         cfg.seed = randseed(runid)
+
+        if cfg.ae_run:
+            cfg.ae_run = os.path.realpath(os.path.expanduser(cfg.ae_run), strict=True)
+
+    if rank == 0 and cfg.ae_run:
+        os.symlink(cfg.ae_run, runpath / "autoencoder")
+
+    dist.barrier(device_ids=[device_id])
 
     # Stem
     if cfg.fork.run is None:

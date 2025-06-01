@@ -30,7 +30,8 @@ def compose(
 
     assert os.path.isfile(config_file), f"{config_file} does not exists."
 
-    config_file = os.path.abspath(config_file)
+    config_file = os.path.expanduser(config_file)
+    config_file = os.path.realpath(config_file, strict=True)
     config_dir, config_name = os.path.split(config_file)
 
     with warnings.catch_warnings():
