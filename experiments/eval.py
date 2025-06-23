@@ -277,8 +277,8 @@ def evaluate(
 
         for field in range(x.shape[0]):
             for t in range(context - 1, x.shape[1]):
-                for auto_encoded in (False, True):
-                    if auto_encoded:
+                for relative in (False, True):
+                    if relative:
                         u, v = x_ae[field, t], x_hat[:, field, t]
                     else:
                         u, v = x[field, t], x_hat[:, field, t]
@@ -337,7 +337,7 @@ def evaluate(
                     line = f"{runname},{target},{compression},{method},"
                     line += f"{settings},{guidance},{context},{overlap},{speed},"
                     line += f"{split},{index},{start},{seed},"
-                    line += f"{field},{(t - context + 1) * cfg.trajectory.stride},{auto_encoded},"
+                    line += f"{field},{(t - context + 1) * cfg.trajectory.stride},{relative},"
                     line += f"{m1},{m2},{spread},{rmse},{nrmse},{vrmse},"
                     line += ",".join(map(format, (*invariants, *rmse_f, *label.tolist())))
                     line += "\n"
