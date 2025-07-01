@@ -205,13 +205,13 @@ def evaluate(
 
                 def emulate(mask, z_obs, i):
                     j = overlap if i > 0 else context
-                    y_i = y[..., i + j : i + cfg.trajectory.length, :, :]  # noqa: B023
-                    A_i = lambda z: A(D(z[..., j : j + len(y_i), :, :]))  # noqa: B023
+                    y_i = y[:, i + j : i + cfg.trajectory.length]  # noqa: B023
+                    A_i = lambda z: A(D(z[:, :, j : j + y_i.shape[1]])).flatten(1)  # noqa: B023
 
                     return emulate_diffusion(
                         MMPSDenoiser(
                             denoiser,
-                            y=y_i,
+                            y=y_i.flatten(),
                             A=A_i,
                             var_y=var_y,  # noqa: B023
                             iterations=1,
