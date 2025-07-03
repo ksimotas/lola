@@ -1,6 +1,6 @@
 # Lost in Latent Space
 
-This repository contains the official implementation of the paper [Lost in Latent Space: An Empirical Study of Latent Diffusion Models for Physics Emulation](https://arxiv.org/abs/TODO) by [François Rozet](https://github.com/francois-rozet), [Ruben Ohana](https://github.com/rubenohana), [Michael McCabe](https://github.com/mikemccabe210), [Gilles Louppe](https://github.com/glouppe), [François Lanusse](https://github.com/EiffL), and [Shirley Ho](https://github.com/shirleysurelyho).
+This repository contains the official implementation of the paper [Lost in Latent Space: An Empirical Study of Latent Diffusion Models for Physics Emulation](https://arxiv.org/abs/2507.02608) by [François Rozet](https://github.com/francois-rozet), [Ruben Ohana](https://github.com/rubenohana), [Michael McCabe](https://github.com/mikemccabe210), [Gilles Louppe](https://github.com/glouppe), [François Lanusse](https://github.com/EiffL), and [Shirley Ho](https://github.com/shirleysurelyho).
 
 #### Abstract
 
@@ -35,7 +35,7 @@ pre-commit install --config pre-commit.yaml
 
 The [lola](lola) directory contains the implementations of the [neural networks](lola/nn), the [autoencoders](lola/autoencoders.py), the [diffusion models](lola/diffusion.py), the [emulation routines](lola/emulation.py), and others.
 
-The [experiments](experiments) directory contains the training scripts, the evaluation scripts and their [configurations](experiments/configs). The [euler](experiments/euler) and [rayleigh_benard](experiments/rayleigh_benard) directories contain the notebooks that produced the figures of the paper.
+The [experiments](experiments) directory contains the training scripts, the evaluation scripts and their [configurations](experiments/configs). The [euler](experiments/euler), [rayleigh_benard](experiments/rayleigh_benard) and [gravity_cooling](experiments/gravity_cooling) directories contain the notebooks that produced the figures of the paper.
 
 ### Data
 
@@ -45,12 +45,13 @@ We rely on a [Ceph File System](https://docs.ceph.com/en/latest/cephfs) partitio
 ln -s /mnt/filesystem/users/you ~/ceph
 ```
 
-The datasets (Euler and Rayleigh-Bénard) are downloaded from [The Well](https://github.com/PolymathicAI/the_well).
+The datasets (Euler, Rayleigh-Bénard and Turbulence Gravity Cooling) are downloaded from [The Well](https://github.com/PolymathicAI/the_well).
 
 ```
 the-well-download --base-path ~/ceph/the_well --dataset euler_multi_quadrants_openBC
 the-well-download --base-path ~/ceph/the_well --dataset euler_multi_quadrants_periodicBC
 the-well-download --base-path ~/ceph/the_well --dataset rayleigh_benard
+the-well-download --base-path ~/ceph/the_well --dataset turbulence_gravity_cooling
 ```
 
 > This could take a while!
@@ -62,9 +63,10 @@ We start with training the autoencoders. For clarity, we provide the commands fo
 ```
 python train_ae.py dataset=euler_all optim.learning_rate=1e-5 ae.lat_channels=64
 python train_ae.py dataset=rayleigh_benard optim.learning_rate=1e-5 ae.lat_channels=64
+python train_ae.py dataset=gravity_cooling optim.learning_rate=1e-5 ae=dcae_3d_f8c64_large ae.lat_channels=64
 ```
 
-Once the above jobs are completed (1-2 days), we encode the entire dataset with each trained autoencoder and cache the resulting latent trajectories permanently on disk. For instance, for the autoencoder run named `di2j3rpb_rayleigh_benard_dcae_f32c64_large`,
+Once the above jobs are completed (1-4 days), we encode the entire dataset with each trained autoencoder and cache the resulting latent trajectories permanently on disk. For instance, for the autoencoder run named `di2j3rpb_rayleigh_benard_dcae_f32c64_large`,
 
 ```
 python cache_latents.py dataset=rayleigh_benard split=train repeat=4 run=~/ceph/lola/runs/ae/di2j3rpb_rayleigh_benard_dcae_f32c64_large
@@ -93,3 +95,20 @@ python eval.py start=16 seed=0 run=~/ceph/lola/runs/dm/0fqjt3js_rayleigh_benard_
 ```
 
 > Each `train_*.py` script schedules a Slurm job to train a model, log the training statistics with `wandb`, and store the weights in the `~/ceph/lola/runs` directory. You will likely have to adapt the requested resources, either in the [config files](experiments/configs) or in the command line.
+
+## Citation
+
+If you find this project useful for your research, please consider citing
+
+```bib
+@unpublished{rozet2025lost,
+  title = {Lost in Latent Space: An Empirical Study of Latent Diffusion Models for Physics Emulation},
+  author = {François Rozet, Ruben Ohana, Michael McCabe, Gilles Louppe, François Lanusse, and Shirley Ho},
+  year = {2025},
+  url = {https://arxiv.org/abs/2507.02608}
+}
+```
+
+## Acknowledgements
+
+The authors would like to thank Géraud Krawezik and the Scientific Computing Core at the Flatiron Institute, a division of the Simons Foundation, for the compute facilities and support. We gratefully acknowledge use of the research computing resources of the Empire AI Consortium, Inc., with support from the State of New York, the Simons Foundation, and the Secunda Family Foundation. Polymathic AI acknowledges funding from the Simons Foundation and Schmidt Sciences, LLC.
