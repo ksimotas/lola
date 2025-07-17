@@ -72,7 +72,7 @@ class AutoEncoder(nn.Module):
 
     def forward(self, x: Tensor) -> Tuple[Tensor, Tensor]:
         z = self.encode(x)
-        y = self.decoder(z)
+        y = self.decode(z)
         return y, z
 
 
