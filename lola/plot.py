@@ -10,7 +10,7 @@ import torch
 from IPython.display import Video
 from moviepy import ImageSequenceClip
 from numpy.typing import ArrayLike
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from tempfile import mkstemp
 from typing import Optional, Sequence, Tuple, Union
 
@@ -274,6 +274,8 @@ def draw(
     background: str = "white",
     isolate: Sequence[int] = (),
     zoom: int = 1,
+    titles: Sequence[str] = (),
+    fontsize: int = 32,
     **kwargs,
 ) -> Image.Image:
     if torch.is_tensor(x):
@@ -314,6 +316,27 @@ def draw(
 
     if zoom > 1:
         img = img.resize((img.width * zoom, img.height * zoom), Image.NEAREST)
+        pad, H, W = pad * zoom, H * zoom, W * zoom
+
+    if titles:
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.load_default(size=fontsize)
+
+        _, _, w, h = draw.textbbox((0, 0), text="".join(titles), font=font)
+
+        new = Image.new(mode="RGB", size=(img.width, img.height + h + pad), color=background)
+        new.paste(img, (0, h + pad))
+
+        img = new
+        draw = ImageDraw.Draw(img)
+
+        for j, title in enumerate(titles):
+            offset = (
+                j * (W + pad) + pad + W // 2,
+                h + pad,
+            )
+
+            draw.text(offset, text=title, anchor="md", fill="black", font=font)
 
     return img
 
