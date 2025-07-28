@@ -28,6 +28,7 @@ def evaluate(
     record: int = 0,
     **ignore,
 ):
+    import math
     import numpy as np
     import time
     import torch
@@ -114,10 +115,7 @@ def evaluate(
         autoencoder.requires_grad_(False)
         autoencoder.eval()
     elif hasattr(cfg, "ae"):
-        if "euler" in cfg.dataset.name or "rayleigh_benard" in cfg.dataset.name:
-            cfg.trajectory = {"stride": 4}
-        else:
-            cfg.trajectory = {"stride": 1}
+        cfg.trajectory = {"stride": 1}
 
         state = torch.load(runpath / "state.pth", weights_only=True, map_location=device)
 
@@ -252,11 +250,11 @@ def evaluate(
                 z_hat = z.expand(samples, *z.shape)
 
             if "euler" in cfg.dataset.name:
-                chunks = 4
+                chunks = math.ceil(16 / cfg.trajectory.stride)
             elif "gravity" in cfg.dataset.name:
-                chunks = 16
+                chunks = math.ceil(16 / cfg.trajectory.stride)
             else:
-                chunks = None
+                chunks = math.ceil(4 / cfg.trajectory.stride)
 
             x_hat = decode_traj(autoencoder, z_hat, batched=True, noisy=False, chunks=chunks)
 
