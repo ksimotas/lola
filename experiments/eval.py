@@ -30,6 +30,7 @@ def evaluate(
 ):
     import math
     import numpy as np
+    import ot
     import time
     import torch
 
@@ -300,15 +301,42 @@ def evaluate(
                     nrmse = torch.sqrt(mse / (torch.mean(u**2) + 1e-6))
                     vrmse = torch.sqrt(mse / (torch.var(u) + 1e-6))
 
-                    # Invariants
-                    invariants = []
+                    # Extras
+                    extras = []
 
+                    ## Total (only makes sense for energy and density)
                     total_u = u.sum()
                     total_v = v.mean(dim=0).sum()
 
-                    invariants.append(1 - total_v / total_u)
+                    extras.append(1 - total_v / total_u)
 
-                    # Fourier
+                    ## Wasserstein
+                    w_uv = ot.lp.wasserstein_1d(
+                        u.flatten(),
+                        v.flatten(),
+                        p=1.0,
+                    )
+
+                    extras.append(w_uv)
+
+                    ## Sliced EMD (only makes sense for density)
+                    if "density" in cfg.dataset.fields[field]:
+                        coo = torch.cartesian_prod(*(torch.linspace(0, 1, size, device=u.device) for size in u.shape))
+                        edm = ot.sliced.sliced_wasserstein_distance(
+                            coo,
+                            coo,
+                            a=u.flatten() / u.sum(),
+                            b=v.mean(dim=0).flatten() / v.mean(dim=0).sum(),
+                            p=1.0,
+                            n_projections=16,
+                            seed=42,
+                        )
+
+                        extras.append(edm)
+                    else:
+                        extras.append(None)
+
+                    ## Fourier
                     p_u, k = isotropic_power_spectrum(u, spatial=spatial)
                     p_v, _ = isotropic_power_spectrum(v, spatial=spatial)
                     p_v = torch.mean(p_v, dim=0)
@@ -318,8 +346,6 @@ def evaluate(
                     se_p = torch.square(1 - (p_v + 1e-6) / (p_u + 1e-6))
                     se_c = torch.square(1 - (c_uv + 1e-6) / torch.sqrt(p_u * p_v + 1e-12))
 
-                    rmse_f = []
-
                     bins = torch.logspace(k[0].log2(), -1.0, steps=4, base=2)
 
                     for i in range(4):
@@ -328,8 +354,8 @@ def evaluate(
                         else:
                             mask = bins[i] <= k
 
-                        rmse_f.append(torch.sqrt(torch.mean(se_p[mask])))
-                        rmse_f.append(torch.sqrt(torch.mean(se_c[mask])))
+                        extras.append(torch.sqrt(torch.mean(se_p[mask])))
+                        extras.append(torch.sqrt(torch.mean(se_c[mask])))
 
                     # Write
                     line = f"{runname},{target},{compression},{method},"
@@ -337,7 +363,7 @@ def evaluate(
                     line += f"{split},{index},{start},{seed},"
                     line += f"{field},{(t - context + 1) * cfg.trajectory.stride},{relative},"
                     line += f"{m1},{m2},{spread},{rmse},{nrmse},{vrmse},"
-                    line += ",".join(map(format, (*invariants, *rmse_f, *label.tolist())))
+                    line += ",".join(map(format, (*extras, *label.tolist())))
                     line += "\n"
 
                     lines.append(line)

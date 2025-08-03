@@ -23,6 +23,7 @@ all = [
   "ipywidgets==8.1.5",
   "matplotlib==3.9.0",
   "moviepy==2.1.2",
+  "POT==0.9.5",
   "pre-commit==3.8.0",
   "ruff==0.6.4",
   "seaborn==0.13.2",
