@@ -171,7 +171,7 @@ def train(runid: str, cfg: DictConfig):
 
         losses, grads = [], []
 
-        for i in range(cfg.train.epoch_size // cfg.train.batch_size):
+        for i in range(cfg.train.accumulation * cfg.train.epoch_size // cfg.train.batch_size):
             x, _ = get_well_inputs(next(train_loader), device=device)
             x = preprocess(x)
             x = rearrange(x, "B 1 ... C -> B C ...")
