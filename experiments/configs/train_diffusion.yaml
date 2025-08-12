@@ -13,7 +13,7 @@ trajectory:
   stride: 1
   context:
     lmbda: 1.0
-    rho: 0.66
+    rho: 1.0
     atleast: 1
 
 train:

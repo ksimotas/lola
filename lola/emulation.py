@@ -184,7 +184,7 @@ def emulate_rollout(
 def random_context_mask(
     x: Tensor,
     lmbda: float = 1.0,
-    rho: float = 0.5,
+    rho: float = 1.0,
     atleast: int = 0,
 ) -> BoolTensor:
     r"""Returns a random context mask.
@@ -209,13 +209,17 @@ def random_context_mask(
     context = context % (L - atleast) + atleast
 
     index = torch.arange(L, device=x.device)
-    forward = torch.rand((B, 1), device=x.device) < rho
 
-    mask = torch.where(
-        forward,
-        index < context,
-        index >= L - context,
-    )
+    if rho <= 0.0:
+        mask = index >= L - context
+    elif rho >= 1.0:
+        mask = index < context
+    else:
+        mask = torch.where(
+            torch.rand((B, 1), device=x.device) < rho,
+            index < context,
+            index >= L - context,
+        )
 
     mask = mask.reshape([B, 1, L] + [1 for _ in shape])
     mask = mask.expand_as(x)

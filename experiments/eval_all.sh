@@ -38,9 +38,9 @@ runs=(
 for run in "${runs[@]}"
 do
     if [[ $run = *"rayleigh_benard"* ]]; then
-        starts=(16 32)
+        starts=(8 16)
     elif [[ $run = *"gravity_cooling"* ]]; then
-        starts=(0 4)
+        starts=(4)
     else
         starts=(0)
     fi
