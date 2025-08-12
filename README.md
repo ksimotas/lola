@@ -66,6 +66,14 @@ python train_ae.py dataset=rayleigh_benard optim.learning_rate=1e-5 ae.lat_chann
 python train_ae.py dataset=gravity_cooling optim.learning_rate=1e-5 ae=dcae_3d_f8c64_large ae.lat_channels=64
 ```
 
+You can inspect the training logs with the `dawgz` command.
+
+```
+dawgz       # list all submitted workflows
+dawgz 7     # list all jobs in the 7th workflow
+dawgz -1 0  # show the logs of the first job in the last workflow
+```
+
 Once the above jobs are completed (1-4 days), we encode the entire dataset with each trained autoencoder and cache the resulting latent trajectories permanently on disk. For instance, for the autoencoder run named `di2j3rpb_rayleigh_benard_dcae_f32c64_large`,
 
 ```
@@ -93,6 +101,8 @@ Finally, we evaluate each trained emulator on the test set.
 python eval.py start=16 seed=0 run=~/ceph/lola/runs/sm/lrg1qgi2_rayleigh_benard_f32c64_vit_large  # neural solver
 python eval.py start=16 seed=0 run=~/ceph/lola/runs/dm/0fqjt3js_rayleigh_benard_f32c64_vit_large  # diffusion model
 ```
+
+The results will be compiled in CSV files at `~/ceph/lola/results`.
 
 > Each `train_*.py` script schedules a Slurm job to train a model, log the training statistics with `wandb`, and store the weights in the `~/ceph/lola/runs` directory. You will likely have to adapt the requested resources, either in the [config files](experiments/configs) or in the command line.
 
