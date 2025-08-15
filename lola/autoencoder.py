@@ -110,6 +110,11 @@ class AutoEncoderLoss(nn.Module):
                 l = (x - y).square().mean()
             elif loss == "mae":
                 l = (x - y).abs().mean()
+            elif loss == "vmse":
+                x = rearrange(x, "B C ... -> B C (...)")
+                y = rearrange(y, "B C ... -> B C (...)")
+                l = (x - y).square().mean(dim=2) / (x.var(dim=2) + 1e-2)
+                l = l.mean()
             elif loss == "vrmse":
                 x = rearrange(x, "B C ... -> B C (...)")
                 y = rearrange(y, "B C ... -> B C (...)")

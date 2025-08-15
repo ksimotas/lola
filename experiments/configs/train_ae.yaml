@@ -1,6 +1,6 @@
 defaults:
   - ae: dcae_f32c64_large
-  - ae/loss: vrmse
+  - ae/loss: vmse
   - dataset: euler_all
   - optim: psgd
   - server: rusty

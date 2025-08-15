@@ -34,7 +34,7 @@ def train(runid: str, cfg: DictConfig):
     from lola.emulation import random_context_mask
     from lola.nn.utils import load_state_dict
     from lola.optim import get_optimizer, safe_gd_step
-    from lola.surrogate import get_surrogate
+    from lola.surrogate import RegressionLoss, get_surrogate
     from lola.utils import randseed
 
     # DDP
@@ -176,6 +176,9 @@ def train(runid: str, cfg: DictConfig):
         cfg.surrogate.spatial = len(cfg.dataset.dimensions) + 1
 
     surrogate = get_surrogate(**cfg.surrogate).to(device)
+    surrogate_loss = RegressionLoss(
+        losses=["mse"] if cfg.ae_run else ["vmse"],
+    ).to(device)
 
     if cfg.fork.run is not None:
         load_state_dict(surrogate, stem_state, strict=cfg.fork.strict)
@@ -229,7 +232,7 @@ def train(runid: str, cfg: DictConfig):
             if (i + 1) % cfg.train.accumulation == 0:
                 y = surrogate(x * mask, mask=mask, label=label)
 
-                loss = (x - y).square().mean()
+                loss = surrogate_loss(x, y)
                 loss_acc = loss / cfg.train.accumulation
                 loss_acc.backward()
 
@@ -242,7 +245,7 @@ def train(runid: str, cfg: DictConfig):
                 with surrogate.no_sync():
                     y = surrogate(x * mask, mask=mask, label=label)
 
-                    loss = (x - y).square().mean()
+                    loss = surrogate_loss(x, y)
                     loss_acc = loss / cfg.train.accumulation
                     loss_acc.backward()
 
@@ -291,7 +294,7 @@ def train(runid: str, cfg: DictConfig):
 
                 y = surrogate(x * mask, mask=mask, label=label)
 
-                loss = (x - y).square().mean()
+                loss = surrogate_loss(x, y)
                 losses.append(loss)
 
         losses = torch.stack(losses)

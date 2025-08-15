@@ -2,13 +2,16 @@ r"""Surrogate building blocks."""
 
 __all__ = [
     "MaskedSurrogate",
+    "RegressionLoss",
     "get_surrogate",
 ]
 
+import torch
 import torch.nn as nn
 
+from einops import rearrange
 from torch import Tensor
-from typing import Optional
+from typing import Optional, Sequence
 
 from .nn.unet import UNet
 from .nn.vit import ViT
@@ -47,6 +50,58 @@ class MaskedSurrogate(nn.Module):
             emb = self.label_embedding(label)
 
         return self.backbone(x * mask, emb, **kwargs)
+
+
+class RegressionLoss(nn.Module):
+    r"""Creates a weighted regression loss module."""
+
+    def __init__(
+        self,
+        losses: Sequence[str] = ["mse"],  # noqa: B006
+        weights: Sequence[float] = [1.0],  # noqa: B006
+    ):
+        super().__init__()
+
+        assert len(losses) == len(weights)
+
+        self.losses = list(losses)
+        self.register_buffer("weights", torch.as_tensor(weights))
+
+    def forward(self, x: Tensor, y: Tensor) -> Tensor:
+        r"""
+        Arguments:
+            x: The target tensor :math:`x`, with shape :math:`(B, C, ...)`.
+            y: The output tensor :math:`y`, with shape :math:`(B, C, ...)`.
+
+        Returns:
+            The weighted loss.
+        """
+
+        values = []
+
+        for loss in self.losses:
+            if loss == "mse":
+                l = (x - y).square().mean()
+            elif loss == "mae":
+                l = (x - y).abs().mean()
+            elif loss == "vmse":
+                x = rearrange(x, "B C ... -> B C (...)")
+                y = rearrange(y, "B C ... -> B C (...)")
+                l = (x - y).square().mean(dim=2) / (x.var(dim=2) + 1e-2)
+                l = l.mean()
+            elif loss == "vrmse":
+                x = rearrange(x, "B C ... -> B C (...)")
+                y = rearrange(y, "B C ... -> B C (...)")
+                l = (x - y).square().mean(dim=2) / (x.var(dim=2) + 1e-2)
+                l = torch.sqrt(l).mean()
+            else:
+                raise ValueError(f"unknown loss '{loss}'.")
+
+            values.append(l)
+
+        values = torch.stack(values)
+
+        return torch.vdot(self.weights, values)
 
 
 def get_surrogate(
