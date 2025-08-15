@@ -185,7 +185,7 @@ def train(runid: str, cfg: DictConfig):
         del stem_state
 
     surrogate = DistributedDataParallel(
-        module=torch.compile(surrogate),
+        module=surrogate,
         device_ids=[device_id],
     )
 
@@ -328,7 +328,7 @@ def train(runid: str, cfg: DictConfig):
 
         ## Checkpoint
         if rank == 0:
-            state = surrogate.module._orig_mod.state_dict()
+            state = surrogate.module.state_dict()
 
             torch.save(state, runpath / "state.pth")
 
