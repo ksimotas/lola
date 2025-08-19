@@ -16,7 +16,7 @@ def encode_traj(
     autoencoder: AutoEncoder,
     x: Tensor,
     batched: bool = False,
-    chunks: Optional[int] = None,
+    chunk_size: Optional[int] = None,
     **kwargs,
 ) -> Tensor:
     if autoencoder is None:
@@ -28,10 +28,10 @@ def encode_traj(
     else:
         x = rearrange(x, "C L ... -> L C ...")
 
-    if chunks is None:
+    if chunk_size is None:
         z = autoencoder.encode(x, **kwargs)
     else:
-        z = torch.cat([autoencoder.encode(xi, **kwargs) for xi in torch.tensor_split(x, chunks)])
+        z = torch.cat([autoencoder.encode(xi, **kwargs) for xi in torch.split(x, chunk_size)])
 
     if batched:
         z = rearrange(z, "(B L) C ... -> B C L ...", B=B)
@@ -45,7 +45,7 @@ def decode_traj(
     autoencoder: AutoEncoder,
     z: Tensor,
     batched: bool = False,
-    chunks: Optional[int] = None,
+    chunk_size: Optional[int] = None,
     **kwargs,
 ) -> Tensor:
     if autoencoder is None:
@@ -57,10 +57,10 @@ def decode_traj(
     else:
         z = rearrange(z, "C L ... -> L C ...")
 
-    if chunks is None:
+    if chunk_size is None:
         x = autoencoder.decode(z, **kwargs)
     else:
-        x = torch.cat([autoencoder.decode(zi, **kwargs) for zi in torch.tensor_split(z, chunks)])
+        x = torch.cat([autoencoder.decode(zi, **kwargs) for zi in torch.split(z, chunk_size)])
 
     if batched:
         x = rearrange(x, "(B L) C ... -> B C L ...", B=B)

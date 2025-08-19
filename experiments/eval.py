@@ -28,7 +28,6 @@ def evaluate(
     record: int = 0,
     **ignore,
 ):
-    import math
     import numpy as np
     import ot
     import time
@@ -251,13 +250,13 @@ def evaluate(
                 z_hat = z.expand(samples, *z.shape)
 
             if "euler" in cfg.dataset.name:
-                chunks = math.ceil(16 / cfg.trajectory.stride)
+                chunk_size = 256
             elif "gravity" in cfg.dataset.name:
-                chunks = math.ceil(16 / cfg.trajectory.stride)
+                chunk_size = 256
             else:
-                chunks = math.ceil(4 / cfg.trajectory.stride)
+                chunk_size = 1024
 
-            x_hat = decode_traj(autoencoder, z_hat, batched=True, noisy=False, chunks=chunks)
+            x_hat = decode_traj(autoencoder, z_hat, batched=True, noisy=False, chunk_size=chunk_size)
 
         tac = time.time()
 
