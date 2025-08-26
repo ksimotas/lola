@@ -113,7 +113,7 @@ If you find this project useful for your research, please consider citing
 ```bib
 @unpublished{rozet2025lost,
   title = {Lost in Latent Space: An Empirical Study of Latent Diffusion Models for Physics Emulation},
-  author = {François Rozet, Ruben Ohana, Michael McCabe, Gilles Louppe, François Lanusse, and Shirley Ho},
+  author = {Rozet, François and Ohana, Ruben and McCabe, Michael and Louppe, Gilles and Lanusse, François and Ho, Shirley},
   year = {2025},
   url = {https://arxiv.org/abs/2507.02608}
 }
