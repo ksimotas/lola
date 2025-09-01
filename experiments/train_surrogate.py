@@ -81,26 +81,6 @@ def train(runid: str, cfg: DictConfig):
 
     dist.barrier(device_ids=[device_id])
 
-    # Stem
-    if cfg.fork.run is None:
-        counter = {
-            "epoch": 0,
-            "update_samples": 0,
-            "update_steps": 0,
-        }
-    else:
-        stem = wandb.Api().run(path=cfg.fork.run)
-        stem_name = Path(stem.config["path"]).name
-        stem_path = Path(f"{cfg.server.storage}/runs/sm/{stem_name}")
-        stem_path = stem_path.expanduser().resolve()
-        stem_state = torch.load(stem_path / f"{cfg.fork.target}.pth", weights_only=True, map_location=device)
-
-        counter = {
-            "epoch": stem.summary["_step"] + 1,
-            "update_samples": stem.summary["train/samples"],
-            "update_steps": stem.summary["train/update_steps"],
-        }
-
     # Data
     if cfg.ae_run:
         files = {
@@ -180,8 +160,12 @@ def train(runid: str, cfg: DictConfig):
         losses=["mse"] if cfg.ae_run else ["vmse"],
     ).to(device)
 
-    if cfg.fork.run is not None:
+    if cfg.fork.run:
+        stem_path = Path(cfg.fork.run).expanduser().resolve()
+        stem_state = torch.load(stem_path / f"{cfg.fork.target}.pth", weights_only=True, map_location=device)
+
         load_state_dict(surrogate, stem_state, strict=cfg.fork.strict)
+
         del stem_state
 
     surrogate = DistributedDataParallel(
@@ -216,7 +200,7 @@ def train(runid: str, cfg: DictConfig):
 
     best_valid_loss = float("inf")
 
-    for _ in epochs:
+    for epoch in epochs:
         ## Train
         surrogate.train()
 
@@ -238,9 +222,6 @@ def train(runid: str, cfg: DictConfig):
 
                 grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
                 grads.append(grad_norm)
-
-                counter["update_samples"] += cfg.train.batch_size
-                counter["update_steps"] += 1
             else:
                 with surrogate.no_sync():
                     y = surrogate(x * mask, mask=mask, label=label)
@@ -274,8 +255,6 @@ def train(runid: str, cfg: DictConfig):
             logs["train/grad_norm/mean"] = grads.mean().item()
             logs["train/grad_norm/std"] = grads.std().item()
             logs["train/learning_rate"] = optimizer.param_groups[0]["lr"]
-            logs["train/update_steps"] = counter["update_steps"]
-            logs["train/samples"] = counter["update_samples"]
 
         del losses, losses_list, grads, grads_list
 
@@ -317,9 +296,7 @@ def train(runid: str, cfg: DictConfig):
                 lv=logs["valid/loss/mean"],
             )
 
-            run.log(logs, step=counter["epoch"])
-
-            counter["epoch"] += 1
+            run.log(logs, step=epoch)
 
         del losses, losses_list
 

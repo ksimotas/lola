@@ -60,26 +60,6 @@ def train(runid: str, cfg: DictConfig):
         cfg.path = str(runpath)
         cfg.seed = randseed(runid)
 
-    # Stem
-    if cfg.fork.run is None:
-        counter = {
-            "epoch": 0,
-            "update_samples": 0,
-            "update_steps": 0,
-        }
-    else:
-        stem = wandb.Api().run(path=cfg.fork.run)
-        stem_name = Path(stem.config["path"]).name
-        stem_path = Path(f"{cfg.server.storage}/runs/ae/{stem_name}")
-        stem_path = stem_path.expanduser().resolve()
-        stem_state = torch.load(stem_path / f"{cfg.fork.target}.pth", weights_only=True, map_location=device)
-
-        counter = {
-            "epoch": stem.summary["_step"] + 1,
-            "update_samples": stem.summary["train/samples"],
-            "update_steps": stem.summary["train/update_steps"],
-        }
-
     # Data
     dataset = {
         split: get_well_multi_dataset(
@@ -126,8 +106,12 @@ def train(runid: str, cfg: DictConfig):
     autoencoder = get_autoencoder(**cfg.ae).to(device)
     autoencoder_loss = AutoEncoderLoss(**cfg.ae.loss).to(device)
 
-    if cfg.fork.run is not None:
+    if cfg.fork.run:
+        stem_path = Path(cfg.fork.run).expanduser().resolve()
+        stem_state = torch.load(stem_path / f"{cfg.fork.target}.pth", weights_only=True, map_location=device)
+
         load_state_dict(autoencoder, stem_state, strict=cfg.fork.strict)
+
         del stem_state
 
         if "encoder" in cfg.fork.freeze:
@@ -165,7 +149,7 @@ def train(runid: str, cfg: DictConfig):
     else:
         epochs = range(cfg.train.epochs)
 
-    for _ in epochs:
+    for epoch in epochs:
         ## Train
         autoencoder.train()
 
@@ -183,9 +167,6 @@ def train(runid: str, cfg: DictConfig):
 
                 grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
                 grads.append(grad_norm)
-
-                counter["update_samples"] += cfg.train.batch_size
-                counter["update_steps"] += 1
             else:
                 with autoencoder.no_sync():
                     loss = autoencoder_loss(autoencoder, x)
@@ -217,8 +198,6 @@ def train(runid: str, cfg: DictConfig):
             logs["train/grad_norm/mean"] = grads.mean().item()
             logs["train/grad_norm/std"] = grads.std().item()
             logs["train/learning_rate"] = optimizer.param_groups[0]["lr"]
-            logs["train/update_steps"] = counter["update_steps"]
-            logs["train/samples"] = counter["update_samples"]
 
         del losses, losses_list, grads, grads_list
 
@@ -256,9 +235,7 @@ def train(runid: str, cfg: DictConfig):
                 lv=logs["valid/loss/mean"],
             )
 
-            run.log(logs, step=counter["epoch"])
-
-            counter["epoch"] += 1
+            run.log(logs, step=epoch)
 
         del losses, losses_list
 
