@@ -1,7 +1,7 @@
 [project]
 name = "lola"
 description = "Lost in Latent Space"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
   "azula==0.3.1",
   "einops==0.8.0",
