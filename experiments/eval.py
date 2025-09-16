@@ -250,11 +250,11 @@ def evaluate(
                 z_hat = z.expand(samples, *z.shape)
 
             if "euler" in cfg.dataset.name:
-                chunk_size = 256
+                chunk_size = 128
             elif "gravity" in cfg.dataset.name:
-                chunk_size = 256
+                chunk_size = 128
             else:
-                chunk_size = 1024
+                chunk_size = 512
 
             x_hat = decode_traj(autoencoder, z_hat, batched=True, noisy=False, chunk_size=chunk_size)
 
@@ -410,6 +410,10 @@ def evaluate(
                 fps=4.0 / cfg.trajectory.stride,
                 isolate={2},
             )
+
+            del frames
+
+        del x, x_ae, x_hat
 
 
 if __name__ == "__main__":
