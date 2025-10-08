@@ -150,11 +150,12 @@ We provide the weights of all models evaluated in the paper. Note that latent em
 If you find this project useful for your research, please consider citing
 
 ```bib
-@unpublished{rozet2025lost,
-  title = {Lost in Latent Space: An Empirical Study of Latent Diffusion Models for Physics Emulation},
-  author = {Rozet, François and Ohana, Ruben and McCabe, Michael and Louppe, Gilles and Lanusse, François and Ho, Shirley},
-  year = {2025},
-  url = {https://arxiv.org/abs/2507.02608}
+@inproceedings{rozet2025lost,
+  title={Lost in Latent Space: An Empirical Study of Latent Diffusion Models for Physics Emulation},
+  author = {Fran{\c{c}}ois Rozet and Ruben Ohana and Michael McCabe and Gilles Louppe and Fran{\c{c}}ois Lanusse and Shirley Ho},
+  booktitle={The Thirty-ninth Annual Conference on Neural Information Processing Systems},
+  year={2025},
+  url={https://openreview.net/forum?id=xoNrbfbekM}
 }
 ```
 
