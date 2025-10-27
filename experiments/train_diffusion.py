@@ -8,7 +8,7 @@ from functools import partial
 from omegaconf import DictConfig
 
 from lola.hydra import compose
-
+from lola.latent3d import LatentVolumeFolder
 
 def train(runid: str, cfg: DictConfig):
     import os
