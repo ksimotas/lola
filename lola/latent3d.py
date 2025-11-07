@@ -98,7 +98,13 @@ class LatentVolumeFolder(Dataset):
             if self.latent_key is None or self.latent_key not in obj:
                 keys = list(obj.keys())
                 raise KeyError(f"{p}: missing key '{self.latent_key}', found keys={keys}")
-            x = self._to_tensor(obj[self.latent_key])
+            x = obj[self.latent_key]
+            # NEW: unwrap if the value is a list/tuple/object-array (e.g., z_q[0])
+            if isinstance(x, (list, tuple)) and len(x) > self.item_index:
+                x = x[self.item_index]
+            if isinstance(x, np.ndarray) and x.dtype == object and x.size == 1:
+                x = x.item()
+            x = self._to_tensor(x)
         else:
             x = self._to_tensor(obj)
 

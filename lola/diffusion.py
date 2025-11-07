@@ -180,6 +180,8 @@ class MaskedDenoiser(GaussianDenoiser):
 
     def forward(self, x_t: Tensor, t: Tensor, **kwargs) -> Gaussian:
         alpha_t, sigma_t = self.denoiser.schedule(t)
+        while alpha_t.ndim < x_t.ndim:
+            alpha_t, sigma_t = alpha_t[..., None], sigma_t[..., None]
 
         x_t = torch.where(
             self.mask,
@@ -249,7 +251,8 @@ class DenoiserLoss(nn.Module):
         if mask is not None:
             mask = kwargs.setdefault("cond", mask.expand(x.shape).contiguous())
 
-        t = self.prior.sample((B,))
+        #t = self.prior.sample((B,))
+        t = self.prior.sample((B,)).to(x.device)
 
         if isinstance(denoiser, DistributedDataParallel):
             alpha_t, sigma_t = denoiser.module.schedule(t)
@@ -341,6 +344,8 @@ def get_denoiser(
         time_embedding=time_embedding,
         label_embedding=label_embedding,
     )
+    if schedule is None or not hasattr(schedule, "name"):
+        raise ValueError("get_denoiser: 'schedule' (DictConfig with .name) is required")
 
     if schedule.name == "log_linear":
         schedule = LogLinearSchedule(
@@ -354,6 +359,8 @@ def get_denoiser(
             scale=getattr(schedule, "scale", 1.0),
             shift=getattr(schedule, "shift", 0.0),
         )
+    else:
+         raise NotImplementedError(f"Unknown schedule '{schedule.name}'")
 
     denoiser = ElucidatedDenoiser(backbone, schedule)
 
@@ -397,6 +404,8 @@ class GuidedDenoiser(GaussianDenoiser):
 
     def forward(self, x_t: Tensor, t: Tensor, **kwargs) -> Gaussian:
         alpha_t, sigma_t = self.schedule(t)
+        while alpha_t.ndim < x_t.ndim:
+            alpha_t, sigma_t = alpha_t[..., None], sigma_t[..., None]
 
         with torch.enable_grad():
             x_t = x_t.detach().requires_grad_()

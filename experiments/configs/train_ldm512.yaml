@@ -1,0 +1,72 @@
+# configs/train_ldm512.yaml
+dataset:
+  type: latents
+  name: fundra_latents
+  path: /global/cfs/cdirs/m3443/usr/xju/Fundra/data/vqvae/v0.6.0/predictions/train         # ← REQUIRED: directory with latent files
+  valid_path: /global/cfs/cdirs/m3443/usr/xju/Fundra/data/vqvae/v0.6.0/predictions/val      # ← OPTIONAL: if omitted, uses `path`
+  latent_key: z_q
+  channels: 512
+  item_index: 0
+  val_item_index: null
+  # Per-channel z-score stats saved from notebook:
+  stats_file: /pscratch/sd/k/ksimotas/lola/latent_channel_stats.pt
+
+denoiser:
+  name: vit_latent3d                       # freeform label used in run name
+  arch: vit                                # selects ViT backbone in get_denoiser
+  emb_features: 256                        # time/label embedding width
+  masked: false
+  label_features: 0
+  # `channels` and `spatial` are set by the trainer from a real batch
+
+  # Noise schedule (EDM-style preconditioning)
+  schedule:
+    name: log_logit
+    sigma_min: 1.0e-3
+    sigma_max: 1.0e+1
+    scale: 1.0
+    shift: 0.0
+
+  # Training loss t-prior
+  loss:
+    distribution: uniform
+    a: 0.0
+    b: 1.0
+
+optim:
+  name: adamw
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+  grad_clip: 1.0
+
+train:
+  epochs: 200
+  epoch_size: 16384          # global samples per epoch
+  batch_size: 64             # global batch (will be split across ranks)
+  accumulation: 1
+
+valid:
+  epoch_size: 4096
+  batch_size: 64
+
+compute:
+  nodes: 1
+  gpus: 4                    # set to 1, 4, or 8 for Perlmutter GPU nodes
+  cpus_per_gpu: 8
+  ram: "256GB"
+  time: "24:00:00"           # Slurm walltime for dawgz job
+
+server:
+  storage: /pscratch/sd/k/ksimotas/lola     # where runs/ and checkpoints will go
+  partition: regular
+  constraint: gpu
+  exclude: ""                 # optional Slurm exclude list
+
+wandb:
+  entity: "kathlynnsimotas"   # or leave null; project is hardcoded as "lola-dm"
+
+fork:
+  run: null                   # optionally warm-start from another run's state.pth
+  target: "state"
+  strict: true

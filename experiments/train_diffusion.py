@@ -1,71 +1,60 @@
 #!/usr/bin/env python
-
 import argparse
+from functools import partial
+from pathlib import Path
+
 import dawgz
 import wandb
 
-from functools import partial
 from omegaconf import DictConfig
-
 from lola.hydra import compose
-from lola.latent3d import LatentVolumeFolder
 
 def train(runid: str, cfg: DictConfig):
     import os
-    import re
     import torch
     import torch.distributed as dist
-    import wandb
 
     from einops import rearrange
     from omegaconf import OmegaConf, open_dict
     from pathlib import Path
     from torch.nn.parallel import DistributedDataParallel
-    from tqdm import trange
+    from torch.utils.data import DataLoader, DistributedSampler
 
-    from lola.data import (
-        MiniWellDataset,
-        field_preprocess,
-        find_hdf5,
-        get_dataloader,
-        get_well_inputs,
-        get_well_multi_dataset,
-    )
+    from lola.latent3d import LatentVolumeFolder
     from lola.diffusion import DenoiserLoss, get_denoiser
-    from lola.emulation import random_context_mask
     from lola.nn.utils import load_state_dict
     from lola.optim import get_optimizer, safe_gd_step
     from lola.utils import randseed
+    from tqdm import trange
 
-    # DDP
+    # ---------------------------
+    # DDP init
+    # ---------------------------
     dist.init_process_group(backend="nccl")
-
     rank = dist.get_rank()
     world_size = dist.get_world_size()
 
-    device_id = os.environ.get("LOCAL_RANK", rank)
-    device_id = int(device_id)
+    device_id = int(os.environ.get("LOCAL_RANK", rank))
     device = torch.device(f"cuda:{device_id}")
     torch.cuda.set_device(device)
 
-    # Performance
+    # Perf
     torch.set_float32_matmul_precision("high")
+    torch.backends.cudnn.benchmark = True
 
-    # Config
+    # ---------------------------
+    # Config sanity checks
+    # ---------------------------
     assert cfg.train.epoch_size % cfg.train.batch_size == 0
     assert cfg.train.batch_size % (cfg.train.accumulation * world_size) == 0
     assert cfg.valid.epoch_size % cfg.valid.batch_size == 0
     assert cfg.valid.batch_size % world_size == 0
 
-    if cfg.ae_run:
-        space = re.search(r"f\d+c\d+", cfg.ae_run).group()
-    else:
-        space = "pixel"
+    # Run naming & paths
+    ds_name = getattr(cfg.dataset, "name", Path(getattr(cfg.dataset, "path", "latents")).stem) or "latents"
+    runname = f"{runid}_{ds_name}_latents_{cfg.denoiser.name}"
 
-    runname = f"{runid}_{cfg.dataset.name}_{space}_{cfg.denoiser.name}"
-
-    runpath = Path(f"{cfg.server.storage}/runs/dm/{runname}")
-    runpath = runpath.expanduser().resolve()
+    runpath = Path(f"{cfg.server.storage}/runs/dm/{runname}").expanduser().resolve()
     runpath.mkdir(parents=True, exist_ok=True)
 
     with open_dict(cfg):
@@ -73,104 +62,116 @@ def train(runid: str, cfg: DictConfig):
         cfg.path = str(runpath)
         cfg.seed = randseed(runid)
 
-        if cfg.ae_run:
-            cfg.ae_run = os.path.realpath(os.path.expanduser(cfg.ae_run), strict=True)
+    # Seed torch for reproducibility across ranks
+    torch.manual_seed(cfg.seed)
+    torch.cuda.manual_seed_all(cfg.seed)
 
-    if rank == 0 and cfg.ae_run:
-        os.symlink(cfg.ae_run, runpath / "autoencoder")
+    dist.barrier()  # plain barrier
 
-    dist.barrier(device_ids=[device_id])
 
-    # Data
-    if cfg.ae_run:
-        files = {
-            split: [
-                file
-                for physic in cfg.dataset.physics
-                for file in find_hdf5(
-                    path=runpath / "autoencoder/cache" / physic / split,
-                    include_filters=cfg.dataset.include_filters,
-                )
-            ]
-            for split in ("train", "valid")
-        }
+    #OPTIONAL: load per-channel stats from file if provided (DDP-safe)
+    stats = None
+    stats_file = getattr(cfg.dataset, "stats_file", None)
+    if stats_file:
+        sf = os.path.expanduser(os.path.realpath(stats_file))
+        if rank == 0:
+            import torch as _torch
+            sdict = _torch.load(sf, map_location="cpu")
+            stats = {
+                "mean": _torch.as_tensor(sdict.get("mean")),
+                "std":  _torch.as_tensor(sdict.get("std")),
+            }
+        # broadcast to all ranks
+        obj_list = [stats]
+        dist.broadcast_object_list(obj_list, src=0)
+        stats = obj_list[0]
 
-        dataset = {
-            split: MiniWellDataset.from_files(
-                files=files[split],
-                steps=cfg.trajectory.length,
-                stride=cfg.trajectory.stride,
-            )
-            for split in ("train", "valid")
-        }
-    else:
-        dataset = {
-            split: get_well_multi_dataset(
-                path=cfg.server.datasets,
-                physics=cfg.dataset.physics,
-                split=split,
-                steps=cfg.trajectory.length,
-                min_dt_stride=cfg.trajectory.stride,
-                max_dt_stride=cfg.trajectory.stride,
-                include_filters=cfg.dataset.include_filters,
-                augment=cfg.dataset.augment,
-            )
-            for split in ("train", "valid")
-        }
+    from omegaconf import open_dict as _open_dict
+    with _open_dict(cfg):
+        cfg.dataset.normalize_mean = stats["mean"].tolist()
+        cfg.dataset.normalize_std  = stats["std"].tolist()
 
-    train_loader, valid_loader = [
-        get_dataloader(
-            dataset=dataset[split],
-            batch_size=(
-                cfg.train.batch_size // cfg.train.accumulation // world_size
-                if split == "train"
-                else cfg.valid.batch_size // world_size
-            ),
-            shuffle=True,
-            infinite=True,
+    # ---------------------------
+    # Dataset: latent volumes only
+    # ---------------------------
+    train_root = getattr(cfg.dataset, "path", None)
+    valid_root = getattr(cfg.dataset, "valid_path", None) or train_root
+    if train_root is None:
+        raise ValueError("cfg.dataset.path must be set for latent training.")
+    
+    train_set = LatentVolumeFolder(
+        root=train_root,
+        latent_key=getattr(cfg.dataset, "latent_key", "z_q"),
+        channels=getattr(cfg.dataset, "channels", 512),
+        item_index=getattr(cfg.dataset, "item_index", 0),
+        normalize_mean=getattr(cfg.dataset, "normalize_mean", None),
+        normalize_std=getattr(cfg.dataset, "normalize_std", None),
+        max_samples=getattr(cfg.dataset, "max_samples", None),
+    )
+
+    valid_set = LatentVolumeFolder(
+        root=valid_root,
+        latent_key=getattr(cfg.dataset, "latent_key", "z_q"),
+        channels=getattr(cfg.dataset, "channels", 512),
+        item_index=getattr(cfg.dataset, "val_item_index", getattr(cfg.dataset, "item_index", 0)),
+        normalize_mean=getattr(cfg.dataset, "normalize_mean", None),
+        normalize_std=getattr(cfg.dataset, "normalize_std", None),
+        max_samples=getattr(cfg.dataset, "val_max_samples", None),
+    )
+
+    def make_loader(ds, global_bs, shuffle):
+        sampler = DistributedSampler(
+            ds, num_replicas=world_size, rank=rank, shuffle=shuffle, drop_last=True
+        )
+        return DataLoader(
+            ds,
+            batch_size=global_bs // world_size,
+            sampler=sampler,
             num_workers=cfg.compute.cpus_per_gpu,
-            rank=rank,
-            world_size=world_size,
-            seed=cfg.seed,
+            pin_memory=True,
+            drop_last=True,
+            persistent_workers=(cfg.compute.cpus_per_gpu > 0),
         )
-        for split in ("train", "valid")
-    ]
+    
+    train_loader = make_loader(train_set, cfg.train.batch_size, shuffle=True)
+    valid_loader = make_loader(valid_set, cfg.valid.batch_size, shuffle=False)
 
-    if cfg.ae_run:
-        preprocess = lambda x: x
-    else:
-        preprocess = partial(
-            field_preprocess,
-            mean=torch.as_tensor(cfg.dataset.stats.mean, device=device),
-            std=torch.as_tensor(cfg.dataset.stats.std, device=device),
-            transform=cfg.dataset.transform,
-        )
+    # Adapter: dataset returns {"image": (B,C,D,H,W)}
+    def get_latent_inputs(batch, device=None):
+        x = batch["image"]  # (B, C, D, H, W)
+        if device is not None:
+            x = x.to(device, non_blocking=True)
+        x = x.movedim(1, -1).contiguous()  # -> (B, D, H, W, C)
+        B = x.shape[0]
+        label = torch.empty(B, 0, device=x.device)  # unconditional
+        return x, label
+    
+    preprocess = lambda x: x  # already normalized if mean/std provided
 
-    x, label = get_well_inputs(next(valid_loader))
-    x = rearrange(x, "B L ... C -> B C L ...")
+    # Prime shapes & set denoiser config
+    batch0 = next(iter(valid_loader))
+    x, _ = get_latent_inputs(batch0, device=device)
+    x = preprocess(x)
+    x = rearrange(x, "B D H W C -> B C D H W")
 
-    # Model, optimizer & scheduler
     with open_dict(cfg):
         cfg.denoiser.channels = x.shape[1]
-        cfg.denoiser.label_features = label.shape[1]
-        cfg.denoiser.spatial = len(cfg.dataset.dimensions) + 1
-        cfg.denoiser.masked = True
+        # (#spatial dims) = x.ndim - 2 for (B, C, ..., ...)
+        cfg.denoiser.spatial = x.ndim - 2
 
+    # ---------------------------
+    # Model, optimizer, sched
+    # ---------------------------
     denoiser = get_denoiser(**cfg.denoiser).to(device)
     denoiser_loss = DenoiserLoss(**cfg.denoiser.loss).to(device)
 
-    if cfg.fork.run:
+    if getattr(cfg.fork, "run", None):
         stem_path = Path(cfg.fork.run).expanduser().resolve()
         stem_state = torch.load(stem_path / f"{cfg.fork.target}.pth", weights_only=True, map_location=device)
-
-        load_state_dict(denoiser, stem_state, strict=cfg.fork.strict)
-
+        load_state_dict(denoiser, stem_state, strict=getattr(cfg.fork, "strict", False))
         del stem_state
 
-    denoiser = DistributedDataParallel(
-        module=denoiser,
-        device_ids=[device_id],
-    )
+    denoiser = DistributedDataParallel(denoiser, device_ids=[device_id])
 
     optimizer, scheduler = get_optimizer(
         params=denoiser.parameters(),
@@ -178,11 +179,11 @@ def train(runid: str, cfg: DictConfig):
         **cfg.optim,
     )
 
-    # W&B
+    # ---------------------------
+    # Weights & Biases
+    # ---------------------------
     if rank == 0:
         OmegaConf.save(cfg, runpath / "config.yaml")
-
-    if rank == 0:
         run = wandb.init(
             entity=cfg.wandb.entity,
             project="lola-dm",
@@ -191,152 +192,145 @@ def train(runid: str, cfg: DictConfig):
             config=OmegaConf.to_container(cfg),
         )
 
-    # Training loop
-    if rank == 0:
-        epochs = trange(cfg.train.epochs, ncols=88, ascii=True)
-    else:
-        epochs = range(cfg.train.epochs)
+    # Helper to recycle an iterator
+    def next_or_cycle(it, loader):
+        try:
+            return next(it), it
+        except StopIteration:
+            it = iter(loader)
+            return next(it), it
 
+    # ---------------------------
+    # Training / Eval
+    # ---------------------------
+    epochs_iter = trange(cfg.train.epochs, ncols=88, ascii=True) if rank == 0 else range(cfg.train.epochs)
     best_valid_loss = float("inf")
 
-    for epoch in epochs:
-        ## Train
+    for epoch in epochs_iter:
+        # per-epoch sampler seeds
+        train_loader.sampler.set_epoch(epoch)
+        valid_loader.sampler.set_epoch(epoch)
+
+        # ---- Train ----
         denoiser.train()
+        losses_epoch, grads_epoch = [], []
 
-        losses, grads = [], []
-
-        for i in range(cfg.train.accumulation * cfg.train.epoch_size // cfg.train.batch_size):
-            x, label = get_well_inputs(next(train_loader), device=device)
+        train_it = iter(train_loader)
+        num_steps = cfg.train.epoch_size // cfg.train.batch_size
+        for step in range(num_steps):
+            (batch, train_it) = next_or_cycle(train_it, train_loader)
+            x, _ = get_latent_inputs(batch, device=device)
             x = preprocess(x)
-            x = rearrange(x, "B L ... C -> B C L ...")
+            x = rearrange(x, "B D H W C -> B C D H W")
 
-            mask = random_context_mask(x, **cfg.trajectory.context)
-
-            if (i + 1) % cfg.train.accumulation == 0:
-                loss = denoiser_loss(denoiser, x, mask=mask, label=label)
-                loss_acc = loss / cfg.train.accumulation
-                loss_acc.backward()
-
+            # accumulation-aware sync
+            if (step + 1) % cfg.train.accumulation == 0:
+                loss = denoiser_loss(denoiser, x)
+                (loss / cfg.train.accumulation).backward()
                 grad_norm = safe_gd_step(optimizer, grad_clip=cfg.optim.grad_clip)
-                grads.append(grad_norm)
+                grads_epoch.append(grad_norm)
             else:
                 with denoiser.no_sync():
-                    loss = denoiser_loss(denoiser, x, mask=mask, label=label)
-                    loss_acc = loss / cfg.train.accumulation
-                    loss_acc.backward()
+                    loss = denoiser_loss(denoiser, x)
+                    (loss / cfg.train.accumulation).backward()
 
-            losses.append(loss.detach())
+            losses_epoch.append(loss.detach())
 
-        losses = torch.stack(losses)
-        grads = torch.stack(grads)
+        # gather train stats
+        losses_t = torch.stack(losses_epoch)
+        grads_t = torch.stack(grads_epoch) if len(grads_epoch) > 0 else torch.zeros(1, device=device)
 
-        if rank == 0:
-            losses_list = [torch.empty_like(losses) for _ in range(world_size)]
-            grads_list = [torch.empty_like(grads) for _ in range(world_size)]
-        else:
-            losses_list = None
-            grads_list = None
-
-        dist.gather(losses, losses_list, dst=0)
-        dist.gather(grads, grads_list, dst=0)
+        losses_list = [torch.empty_like(losses_t) for _ in range(world_size)]
+        grads_list = [torch.empty_like(grads_t) for _ in range(world_size)]
+        dist.all_gather(losses_list, losses_t)
+        dist.all_gather(grads_list, grads_t)
 
         if rank == 0:
-            losses = torch.cat(losses_list).cpu()
-            grads = torch.cat(grads_list).cpu()
+            losses_cat = torch.cat(losses_list).cpu()
+            grads_cat = torch.cat(grads_list).cpu()
+            logs = {
+                "train/loss/mean": losses_cat.mean().item(),
+                "train/loss/std": losses_cat.std(unbiased=False).item(),
+                "train/grad_norm/mean": grads_cat.mean().item(),
+                "train/grad_norm/std": grads_cat.std(unbiased=False).item(),
+                "train/learning_rate": optimizer.param_groups[0]["lr"],
+            }
 
-            logs = {}
-            logs["train/loss/mean"] = losses.mean().item()
-            logs["train/loss/std"] = losses.std().item()
-            logs["train/grad_norm/mean"] = grads.mean().item()
-            logs["train/grad_norm/std"] = grads.std().item()
-            logs["train/learning_rate"] = optimizer.param_groups[0]["lr"]
-
-        del losses, losses_list, grads, grads_list
-
-        ## Eval
+        # ---- Eval ----
         denoiser.eval()
-
-        losses = []
-
+        valid_losses = []
         with torch.no_grad():
-            for _ in range(cfg.valid.epoch_size // cfg.valid.batch_size):
-                x, label = get_well_inputs(next(valid_loader), device=device)
+            valid_it = iter(valid_loader)
+            valid_steps = cfg.valid.epoch_size // cfg.valid.batch_size
+            for _ in range(valid_steps):
+                (batch, valid_it) = next_or_cycle(valid_it, valid_loader)
+                x, _ = get_latent_inputs(batch, device=device)
                 x = preprocess(x)
-                x = rearrange(x, "B L ... C -> B C L ...")
+                x = rearrange(x, "B D H W C -> B C D H W")
+                loss = denoiser_loss(denoiser, x)
+                valid_losses.append(loss)
 
-                mask = random_context_mask(x, **cfg.trajectory.context)
-
-                loss = denoiser_loss(denoiser, x, mask=mask, label=label)
-                losses.append(loss)
-
-        losses = torch.stack(losses)
-
-        if rank == 0:
-            losses_list = [torch.empty_like(losses) for _ in range(world_size)]
-        else:
-            losses_list = None
-
-        dist.gather(losses, losses_list, dst=0)
+        valid_t = torch.stack(valid_losses)
+        valid_list = [torch.empty_like(valid_t) for _ in range(world_size)]
+        dist.all_gather(valid_list, valid_t)
 
         if rank == 0:
-            losses = torch.cat(losses_list).cpu()
+            valid_cat = torch.cat(valid_list).cpu()
+            logs["valid/loss/mean"] = valid_cat.mean().item()
+            logs["valid/loss/std"] = valid_cat.std(unbiased=False).item()
 
-            logs["valid/loss/mean"] = losses.mean().item()
-            logs["valid/loss/std"] = losses.std().item()
-
-            epochs.set_postfix(
-                lt=logs["train/loss/mean"],
-                lv=logs["valid/loss/mean"],
-            )
+            if hasattr(epochs_iter, "set_postfix"):
+                epochs_iter.set_postfix(lt=logs["train/loss/mean"], lv=logs["valid/loss/mean"])
 
             run.log(logs, step=epoch)
 
-        del losses, losses_list
-
-        ## LR scheduler
+        # LR step
         scheduler.step()
 
-        ## Checkpoint
+        # Checkpoint
         if rank == 0:
             state = denoiser.module.state_dict()
-
             torch.save(state, runpath / "state.pth")
-
             if logs["valid/loss/mean"] < best_valid_loss:
                 best_valid_loss = logs["valid/loss/mean"]
-
                 torch.save(state, runpath / "state_best.pth")
-
             del state
 
-        dist.barrier(device_ids=[device_id])
+        dist.barrier()
 
-    # W&B
     if rank == 0:
         run.finish()
 
-    # DDP
     dist.destroy_process_group()
 
-
 if __name__ == "__main__":
-    # Parser
     parser = argparse.ArgumentParser()
     parser.add_argument("overrides", nargs="*", type=str)
-
     args = parser.parse_args()
 
-    # Config
+    script_root = Path(__file__).resolve().parent
+    default_cfg = script_root / "configs" / "train_ldm512.yaml"
+
+    if not default_cfg.is_file():
+        raise FileNotFoundError(
+            f"Expected default config at {default_cfg}, but it was not found. "
+            "Update the path or provide overrides pointing to a valid config."
+        )
+
     cfg = compose(
-        config_file="./configs/train_diffusion.yaml",
+        config_file=str(default_cfg),
         overrides=args.overrides,
     )
 
-    # Job
     runid = wandb.util.generate_id()
 
     if cfg.compute.nodes > 1:
-        interpreter = f"torchrun --nnodes {cfg.compute.nodes} --nproc-per-node {cfg.compute.gpus} --rdzv_backend=c10d --rdzv_endpoint=$SLURMD_NODENAME:12345 --rdzv_id=$SLURM_JOB_ID"
+        interpreter = (
+            f"torchrun --nnodes {cfg.compute.nodes} "
+            f"--nproc-per-node {cfg.compute.gpus} "
+            f"--rdzv_backend=c10d --rdzv_endpoint=$SLURMD_NODENAME:12345 "
+            f"--rdzv_id=$SLURM_JOB_ID"
+        )
     else:
         interpreter = f"torchrun --nnodes 1 --nproc-per-node {cfg.compute.gpus} --standalone"
 
